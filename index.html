@@ -1,0 +1,1997 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CLB Quản Lý Bán Hàng v3.0</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+:root{
+  --or:#EE4D2D;--orl:#FFF4F0;--ord:#C73D22;--orm:#FF8557;
+  --bg:#F5F5F5;--bd:#E8E8E8;--text:#212121;--mut:#767676;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{height:100%}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;overflow:hidden;background:var(--bg);color:var(--text)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d0d0d0;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#b0b0b0}
+input,select,textarea,button{font-family:inherit;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--or)!important}
+.card{background:#fff;border:1px solid var(--bd);border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.btn-pri{background:var(--or);color:#fff;border:none;cursor:pointer;font-weight:600;transition:background .15s}
+.btn-pri:hover{background:var(--ord)}
+.btn-pri:disabled{background:#e0e0e0;color:#999;cursor:not-allowed}
+@keyframes slideRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.fade-up{animation:fadeUp .2s ease}
+.fade-in{animation:fadeIn .2s ease}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useMemo,useRef} = React;
+
+/* ══════════════════════════════════════════════════════════
+   SUPABASE CONFIG
+══════════════════════════════════════════════════════════ */
+const SUPABASE_URL = "https://ebfpxalvpksgnaeemcwl.supabase.co";
+const SUPABASE_KEY = "sb_publishable_8HPd1lPa6i5TReqNmsre8A_NL32itNY";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  realtime: { params: { eventsPerSecond: 10 } }
+});
+
+/* Mappers giữa shape JS (gọn) và shape DB (snake_case + reserved-safe) */
+const orderId = num => "ĐH" + String(num).padStart(3,"0");
+const productFromDb = r => ({id:r.id,name:r.name,cat:r.cat,price:r.price,stock:r.stock,on:r.on_menu,emoji:r.emoji,recipe:r.recipe});
+const productToDb   = p => ({id:p.id,name:p.name,cat:p.cat,price:p.price,stock:p.stock,on_menu:p.on!==false,emoji:p.emoji,recipe:p.recipe});
+const orderFromDb   = r => ({id:orderId(r.num),num:r.num,t:r.t,cus:r.cus,ph:r.ph||"",type:r.type,adr:r.adr||"",items:r.items||[],st:r.st,pay:r.pay,dFee:r.d_fee,disc:r.disc,dT:r.d_t,by:r.by_id,kpi:r.kpi_id,sid:r.sid,note:r.note||""});
+const orderToDb     = o => ({num:o.num,t:o.t,cus:o.cus,ph:o.ph,type:o.type,adr:o.adr,items:o.items,st:o.st,pay:o.pay,d_fee:o.dFee,disc:o.disc,d_t:o.dT,by_id:o.by,kpi_id:o.kpi,sid:o.sid,note:o.note});
+const shiftFromDb   = r => ({name:r.name,start:r.start_at,end:r.end_at});
+const shiftToDb     = s => ({name:s.name,start_at:s.start,end_at:s.end});
+
+/* ══════════════════════════════════════════════════════════
+   SEED DATA
+══════════════════════════════════════════════════════════ */
+const P0 = [
+  {id:1,name:"Cà phê sữa đá",cat:"pha_che",price:20000,stock:45,on:true,emoji:"☕",
+   recipe:{serves:1,prep:"3 phút",ing:["30ml espresso","200ml sữa tươi","Đá viên vừa đủ","10g đường cát"],steps:["Pha 30ml espresso double shot","Cho đá viên vào ly 300ml","Rót 200ml sữa tươi lên đá","Đổ espresso lên mặt","Khuấy nhẹ hoặc để layered"]}},
+  {id:2,name:"Cà phê đen",cat:"pha_che",price:15000,stock:60,on:true,emoji:"☕",
+   recipe:{serves:1,prep:"2 phút",ing:["40ml espresso","120ml nước nóng 80°C","Đá viên (tùy chọn)"],steps:["Pha 40ml espresso","Pha loãng với nước nóng 80°C","Cho đá nếu muốn uống lạnh"]}},
+  {id:3,name:"Trà sữa trân châu",cat:"pha_che",price:25000,stock:30,on:true,emoji:"🧋",
+   recipe:{serves:1,prep:"5 phút",ing:["300ml trà oolong","100ml sữa đặc","Trân châu 50g","Đá viên","20g đường"],steps:["Pha trà oolong đặc để nguội","Nấu trân châu đến chín mềm","Cho trân châu vào ly + đá","Rót trà + sữa đặc","Lắc đều trước khi uống"]}},
+  {id:4,name:"Matcha latte",cat:"pha_che",price:30000,stock:25,on:true,emoji:"🍵",
+   recipe:{serves:1,prep:"4 phút",ing:["5g bột matcha Nhật","30ml nước nóng 80°C","200ml sữa tươi","15g đường","Đá viên"],steps:["Hòa tan matcha với nước 80°C","Đánh bọt sữa tươi","Cho đá vào ly","Rót sữa vào trước","Thêm matcha lên trên"]}},
+  {id:5,name:"Nước ép cam",cat:"pha_che",price:25000,stock:0,on:false,emoji:"🍊",
+   recipe:{serves:1,prep:"3 phút",ing:["3 quả cam Sành","20g đường","Muối 1 nhúm nhỏ"],steps:["Ép 3 quả cam","Lọc qua rây","Thêm đường + muối khuấy tan","Cho đá vào ly"]}},
+  {id:6,name:"Smoothie dâu",cat:"pha_che",price:35000,stock:15,on:true,emoji:"🍓",
+   recipe:{serves:1,prep:"4 phút",ing:["150g dâu tây","100ml sữa tươi","2 tbsp mật ong","100g đá viên"],steps:["Rửa sạch bỏ cuống dâu","Cho tất cả vào máy xay","Xay nhuyễn 30-40 giây","Rót ra ly"]}},
+  {id:7,name:"Bánh mì pate",cat:"san_co",price:15000,stock:20,on:true,emoji:"🥖",
+   recipe:{serves:1,prep:"2 phút",ing:["1 ổ bánh mì giòn","Pate gan heo","Dưa leo","Hành lá","Tương ớt","Mayonnaise"],steps:["Nướng bánh mì giòn","Phết pate + mayonnaise","Xếp dưa leo và hành lá","Thêm tương ớt"]}},
+  {id:8,name:"Snack phô mai",cat:"san_co",price:5000,stock:100,on:true,emoji:"🧀",
+   recipe:{serves:1,prep:"0 phút",ing:["1 gói snack phô mai 30g"],steps:["Mở gói và phục vụ"]}},
+  {id:9,name:"Bánh tráng trộn",cat:"kho",price:20000,stock:12,on:true,emoji:"🍜",
+   recipe:{serves:1,prep:"5 phút",ing:["Bánh tráng 3 tờ","Sa tế","Tôm khô 10g","Đậu phộng 15g","Hành phi","Rau răm","Muối me 5g"],steps:["Xé bánh tráng","Trộn với sa tế + muối me","Thêm tôm khô + đậu phộng","Thêm hành phi + rau răm","Trộn đều"]}},
+  {id:10,name:"Khoai tây chiên",cat:"kho",price:18000,stock:8,on:true,emoji:"🍟",
+   recipe:{serves:1,prep:"10 phút",ing:["Khoai tây 200g","Dầu chiên 500ml","Muối + tiêu","Sốt chấm"],steps:["Thái khoai sợi","Ngâm nước muối 10 phút","Chiên 150°C 5 phút","Chiên 180°C 3 phút","Thêm muối tiêu"]}},
+];
+
+const S0 = [
+  {id:1,name:"Hoàng Khánh",role:"truong_ca",checkin:"07:45",active:true,pin:"1111"},
+  {id:2,name:"Nguyễn Hà",  role:"truc_don", checkin:"07:55",active:true,pin:"2222"},
+  {id:3,name:"Trần Minh",  role:"pha_che",  checkin:"08:00",active:true,pin:"3333"},
+  {id:4,name:"Lê Ngọc",    role:"pha_che",  checkin:"08:02",active:true,pin:"4444"},
+  {id:5,name:"Phạm Tuấn",  role:"shipper",  checkin:"08:10",active:true,pin:"5555"},
+  {id:6,name:"Vũ Linh",    role:"shipper",  checkin:"08:15",active:true,pin:"6666"},
+];
+
+const O0 = [
+  {id:"ĐH001",t:"08:15",cus:"Nguyễn Anh",ph:"",type:"ship",adr:"Tòa B5 P.302",items:[{pid:1,name:"Cà phê sữa đá",qty:2,p:20000,note:""},{pid:7,name:"Bánh mì pate",qty:1,p:15000,note:""}],st:"pha_che",pay:"qr",dFee:5000,disc:0,dT:"fixed",by:2,kpi:2,sid:null,note:""},
+  {id:"ĐH002",t:"08:22",cus:"Trần Bình",ph:"",type:"tai_cho",adr:"",items:[{pid:3,name:"Trà sữa trân châu",qty:1,p:25000,note:""},{pid:8,name:"Snack phô mai",qty:3,p:5000,note:""}],st:"san_sang",pay:"cash",dFee:0,disc:0,dT:"fixed",by:2,kpi:2,sid:null,note:""},
+  {id:"ĐH003",t:"08:30",cus:"Lê Châu",ph:"",type:"ship",adr:"Tòa A2 P.101",items:[{pid:4,name:"Matcha latte",qty:2,p:30000,note:"Ít đường"}],st:"moi",pay:"qr",dFee:8000,disc:5000,dT:"fixed",by:2,kpi:1,sid:null,note:"Giao trước 9h"},
+  {id:"ĐH004",t:"08:45",cus:"Phạm Dũng",ph:"",type:"tai_cho",adr:"",items:[{pid:2,name:"Cà phê đen",qty:1,p:15000,note:""}],st:"hoan_thanh",pay:"cash",dFee:0,disc:0,dT:"fixed",by:2,kpi:2,sid:null,note:""},
+  {id:"ĐH005",t:"08:50",cus:"Vũ Em",ph:"",type:"ship",adr:"KTX C1 P.215",items:[{pid:1,name:"Cà phê sữa đá",qty:3,p:20000,note:""}],st:"dang_giao",pay:"qr",dFee:10000,disc:0,dT:"fixed",by:2,kpi:2,sid:5,note:""},
+];
+
+const ZN0 = [
+  {lb:"< 500m",   fee:5000},
+  {lb:"500m–1km", fee:8000},
+  {lb:"> 1km",    fee:12000},
+];
+
+const SHIFT0 = {name:"Ca sáng",start:"07:45",end:"12:00"};
+
+/* ══════════════════════════════════════════════════════════
+   CONSTANTS
+══════════════════════════════════════════════════════════ */
+const ST = {
+  moi:        {label:"Mới",        bg:"#FFF4F0",color:"#EE4D2D"},
+  pha_che:    {label:"Đang pha",   bg:"#dbeafe",color:"#1e40af"},
+  san_sang:   {label:"Sẵn sàng",   bg:"#ede9fe",color:"#5b21b6"},
+  dang_giao:  {label:"Đang giao",  bg:"#ffedd5",color:"#c2410c"},
+  hoan_thanh: {label:"Hoàn thành", bg:"#dcfce7",color:"#15803d"},
+  huy:        {label:"Đã huỷ",     bg:"#fee2e2",color:"#b91c1c"},
+};
+const RL = {truong_ca:"Trưởng ca",truc_don:"Trực đơn",pha_che:"Pha chế",shipper:"Shipper",admin:"Admin"};
+const RD = {
+  truong_ca:"Giám sát toàn bộ ca, phân công, báo cáo",
+  truc_don: "Tạo đơn, tiếp nhận khách, thu tiền",
+  pha_che:  "Xem KDS, pha chế, đánh dấu hoàn thành",
+  shipper:  "Xem đơn giao, xác nhận đã giao",
+  admin:    "Toàn quyền, cấu hình hệ thống",
+};
+const RC = {
+  truong_ca:["#1D4ED8","#EFF6FF"],
+  truc_don: ["#EE4D2D","#FFF4F0"],
+  pha_che:  ["#D97706","#FFFBEB"],
+  shipper:  ["#16A34A","#F0FDF4"],
+  admin:    ["#7C3AED","#F5F3FF"],
+};
+const CL = {pha_che:"☕ Đồ pha chế",san_co:"📦 Đồ sẵn có",kho:"⚡ Dùng ngay"};
+
+/* ══════════════════════════════════════════════════════════
+   UTILS
+══════════════════════════════════════════════════════════ */
+const fmt   = n => (n||0).toLocaleString("vi-VN")+"đ";
+const inits = n => n.split(" ").map(w=>w[0]||"").slice(-2).join("");
+const nowS  = () => { const d=new Date(); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+const todayS= () => { const d=new Date(); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; };
+const iSub  = o => o.items.reduce((s,i)=>s+i.p*i.qty,0);
+const iTot  = o => iSub(o)+o.dFee-o.disc;
+const nxSt  = o => {
+  if (o.st==="san_sang") return o.type==="tai_cho"?"hoan_thanh":"dang_giao";
+  return {moi:"pha_che",pha_che:"san_sang",dang_giao:"hoan_thanh"}[o.st]||null;
+};
+const nxLb  = o => ({
+  moi:"▶ Bắt đầu pha",
+  pha_che:"✓ Hoàn thành pha",
+  san_sang:o.type==="tai_cho"?"✓ Hoàn thành":"→ Chuyển shipper",
+  dang_giao:"✓ Xác nhận giao",
+}[o.st]||null);
+
+const LS = {
+  get:(k,fb)=>{try{const v=localStorage.getItem("clb_"+k);return v?JSON.parse(v):fb;}catch(e){return fb;}},
+  set:(k,v)=>{try{localStorage.setItem("clb_"+k,JSON.stringify(v));}catch(e){}},
+};
+
+/* ══════════════════════════════════════════════════════════
+   ATOMS
+══════════════════════════════════════════════════════════ */
+const Bdg = ({s}) => {
+  const d = ST[s]||ST.moi;
+  return <span style={{fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,background:d.bg,color:d.color,whiteSpace:"nowrap",display:"inline-block"}}>{d.label}</span>;
+};
+
+const TPill = ({type}) => {
+  const ship = type==="ship";
+  return <span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:ship?"#FFF4F0":"#f0fdf4",color:ship?"#EE4D2D":"#15803d",fontWeight:600}}>{ship?"🛵 Ship":"🏠 Tại chỗ"}</span>;
+};
+
+const StBdg = ({stock}) => {
+  if (stock===0)  return <span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:"#fee2e2",color:"#b91c1c",fontWeight:600}}>Hết hàng</span>;
+  if (stock<=10)  return <span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:"#fff4f0",color:"#EE4D2D",fontWeight:600}}>Còn {stock}</span>;
+  return <span style={{fontSize:10,padding:"2px 7px",borderRadius:20,background:"#f5f5f5",color:"#767676"}}>Còn {stock}</span>;
+};
+
+function Qty({val,onInc,onDec,min=0,max=99,sm=false}){
+  const sz=sm?26:30;
+  return (
+    <div style={{display:"inline-flex",alignItems:"center",border:"1.5px solid var(--bd)",borderRadius:6,overflow:"hidden",background:"#fff"}}>
+      <button onClick={onDec} disabled={val<=min}
+        style={{width:sz,height:sz,background:"transparent",border:"none",cursor:val<=min?"not-allowed":"pointer",color:val<=min?"#e0e0e0":"#475569",fontSize:18,fontWeight:200}}>−</button>
+      <span style={{minWidth:sm?22:30,textAlign:"center",fontSize:13,fontWeight:700,color:"#0f172a"}}>{val}</span>
+      <button onClick={onInc} disabled={val>=max}
+        style={{width:sz,height:sz,background:"transparent",border:"none",cursor:val>=max?"not-allowed":"pointer",color:val>=max?"#e0e0e0":"#0f172a",fontSize:18,fontWeight:200}}>+</button>
+    </div>
+  );
+}
+
+function Tog({on,onChange,sm=false}){
+  const w=sm?28:36, h=sm?16:20, k=sm?12:16;
+  return (
+    <button onClick={()=>onChange(!on)}
+      style={{width:w,height:h,borderRadius:h/2,background:on?"var(--or)":"#d0d0d0",border:"none",cursor:"pointer",position:"relative",transition:"background .15s",padding:0}}>
+      <span style={{position:"absolute",top:2,left:on?w-k-2:2,width:k,height:k,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 3px rgba(0,0,0,.2)",transition:"left .15s"}}/>
+    </button>
+  );
+}
+
+function Toast({list,dismiss}){
+  const bg={success:"#15803d",warn:"#b45309",error:"#b91c1c",info:"#1e293b"};
+  const ic={success:"ti-circle-check",warn:"ti-alert-triangle",error:"ti-circle-x",info:"ti-info-circle"};
+  return (
+    <div style={{position:"fixed",top:16,right:16,zIndex:9999,display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>
+      {list.map(t=>(
+        <div key={t.id} style={{animation:"slideRight .25s ease",background:bg[t.type]||bg.info,color:"#fff",padding:"10px 14px",borderRadius:8,fontSize:12,fontWeight:500,display:"flex",alignItems:"center",gap:8,minWidth:230,maxWidth:340,boxShadow:"0 4px 20px rgba(0,0,0,.3)",pointerEvents:"all"}}>
+          <i className={`ti ${ic[t.type]||ic.info}`} style={{fontSize:15,flexShrink:0}}/>
+          <span style={{flex:1,lineHeight:1.4}}>{t.msg}</span>
+          <button onClick={()=>dismiss(t.id)} style={{background:"none",border:"none",color:"rgba(255,255,255,.7)",cursor:"pointer",fontSize:16,lineHeight:1,padding:0}}>✕</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   RECIPE MODAL
+══════════════════════════════════════════════════════════ */
+function RecipeModal({product,onClose,onSave,toast}){
+  const [editing,setEditing] = useState(false);
+  const [r,setR]   = useState({...product.recipe,ing:[...product.recipe.ing],steps:[...product.recipe.steps]});
+  const [ing,setIng] = useState(product.recipe.ing.join("\n"));
+  const [stp,setStp] = useState(product.recipe.steps.join("\n"));
+
+  const save=()=>{
+    const updated={...r,ing:ing.split("\n").map(s=>s.trim()).filter(Boolean),steps:stp.split("\n").map(s=>s.trim()).filter(Boolean)};
+    setR(updated); onSave(updated); setEditing(false);
+    toast("Đã lưu công thức","success");
+  };
+
+  const importFile=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=ev=>{
+      const lines=ev.target.result.split("\n").map(s=>s.trim()).filter(Boolean);
+      setIng(lines.join("\n")); setEditing(true);
+      toast("Đã import. Kiểm tra và lưu lại","info");
+    };
+    rd.readAsText(f);
+  };
+
+  const copy=()=>{
+    const txt=`${product.emoji} ${product.name}\n\nNguyên liệu (${r.serves} khẩu phần):\n${r.ing.map(s=>"• "+s).join("\n")}\n\nCách làm:\n${r.steps.map((s,i)=>`${i+1}. ${s}`).join("\n")}`;
+    navigator.clipboard?.writeText(txt); toast("Đã sao chép công thức","success");
+  };
+
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",animation:"fadeIn .15s"}}>
+      <div style={{background:"#fff",borderRadius:12,width:540,maxHeight:"86vh",overflow:"auto",padding:24,animation:"fadeUp .2s ease"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:700,color:"#212121",marginBottom:3}}>{product.emoji} {product.name}</div>
+            <div style={{fontSize:11,color:"#767676"}}>{r.serves} khẩu phần · ⏱ {r.prep}</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            {!editing
+              ? <button onClick={()=>setEditing(true)} style={{display:"flex",alignItems:"center",gap:4,padding:"6px 12px",background:"#FFF4F0",border:"none",borderRadius:6,color:"#EE4D2D",fontSize:12,fontWeight:600,cursor:"pointer"}}><i className="ti ti-edit" style={{fontSize:13}}/>Chỉnh sửa</button>
+              : <>
+                  <button onClick={()=>setEditing(false)} style={{padding:"6px 12px",background:"#f5f5f5",border:"none",borderRadius:6,color:"#475569",fontSize:12,cursor:"pointer"}}>Huỷ</button>
+                  <button onClick={save} className="btn-pri" style={{display:"flex",alignItems:"center",gap:4,padding:"6px 12px",borderRadius:6,fontSize:12}}><i className="ti ti-check" style={{fontSize:13}}/>Lưu</button>
+                </>
+            }
+            <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:22,lineHeight:1}}>✕</button>
+          </div>
+        </div>
+
+        <div style={{background:"#f8f8f8",borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#475569"}}>
+          <span style={{fontWeight:600,color:"#212121"}}>Thời gian: </span>{r.prep}
+          {!editing&&<>
+            <span style={{margin:"0 12px",color:"#e0e0e0"}}>|</span>
+            <span style={{fontWeight:600,color:"#212121"}}>Khẩu phần: </span>{r.serves}
+          </>}
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{width:20,height:20,background:"#FFF4F0",borderRadius:4,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#EE4D2D",fontWeight:700}}>1</span>
+            Nguyên liệu
+          </div>
+          {!editing
+            ? <ul style={{paddingLeft:20,display:"flex",flexDirection:"column",gap:4}}>
+                {r.ing.map((s,i)=><li key={i} style={{fontSize:13,color:"#475569",lineHeight:1.5}}>{s}</li>)}
+              </ul>
+            : <textarea value={ing} onChange={e=>setIng(e.target.value)}
+                style={{width:"100%",height:110,padding:"8px 10px",border:"1px solid #e0e0e0",borderRadius:6,fontSize:12,resize:"vertical",lineHeight:1.6}}
+                placeholder="Mỗi nguyên liệu 1 dòng..."/>
+          }
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{width:20,height:20,background:"#dbeafe",borderRadius:4,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#1e40af",fontWeight:700}}>2</span>
+            Các bước thực hiện
+          </div>
+          {!editing
+            ? <ol style={{paddingLeft:20,display:"flex",flexDirection:"column",gap:6}}>
+                {r.steps.map((s,i)=><li key={i} style={{fontSize:13,color:"#475569",lineHeight:1.5}}>{s}</li>)}
+              </ol>
+            : <textarea value={stp} onChange={e=>setStp(e.target.value)}
+                style={{width:"100%",height:130,padding:"8px 10px",border:"1px solid #e0e0e0",borderRadius:6,fontSize:12,resize:"vertical",lineHeight:1.6}}
+                placeholder="Mỗi bước 1 dòng..."/>
+          }
+        </div>
+
+        <div style={{paddingTop:12,borderTop:"1px solid #f0f0f0",display:"flex",gap:8,alignItems:"center"}}>
+          <label style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:"#f5f5f5",borderRadius:6,fontSize:12,color:"#475569",cursor:"pointer",fontWeight:500}}>
+            <i className="ti ti-upload" style={{fontSize:13}}/>Import .txt
+            <input type="file" accept=".txt" style={{display:"none"}} onChange={importFile}/>
+          </label>
+          <button onClick={copy} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:"#f5f5f5",border:"none",borderRadius:6,fontSize:12,color:"#475569",cursor:"pointer",fontWeight:500}}>
+            <i className="ti ti-copy" style={{fontSize:13}}/>Sao chép
+          </button>
+          <div style={{flex:1}}/>
+          {editing&&<div style={{fontSize:11,color:"#94a3b8"}}>* Mỗi nguyên liệu / bước 1 dòng</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   HELP POPUP
+══════════════════════════════════════════════════════════ */
+function HelpPopup(){
+  const [open,setOpen] = useState(false);
+  const [tab,setTab]   = useState("intro");
+
+  const tabs=[
+    {k:"intro",l:"Tổng quan",ic:"ti-info-circle"},
+    {k:"role", l:"Phân quyền",ic:"ti-shield-check"},
+    {k:"flow", l:"Quy trình",ic:"ti-route"},
+    {k:"acc",  l:"Tài khoản",ic:"ti-user-circle"},
+  ];
+
+  return (
+    <>
+      <button onClick={()=>setOpen(true)}
+        style={{position:"fixed",bottom:20,right:20,zIndex:998,width:48,height:48,borderRadius:"50%",background:"var(--or)",border:"none",color:"#fff",cursor:"pointer",boxShadow:"0 4px 16px rgba(238,77,45,.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,transition:"transform .15s"}}
+        onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
+        onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+        <i className="ti ti-help"/>
+      </button>
+
+      {open&&(
+        <div onClick={e=>e.target===e.currentTarget&&setOpen(false)}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1001,display:"flex",alignItems:"center",justifyContent:"center",animation:"fadeIn .15s"}}>
+          <div style={{background:"#fff",borderRadius:12,width:620,maxHeight:"86vh",overflow:"hidden",display:"flex",flexDirection:"column",animation:"fadeUp .2s ease"}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #f0f0f0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontSize:16,fontWeight:700,color:"#212121"}}>📖 Hướng dẫn sử dụng</div>
+              <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:22,lineHeight:1}}>✕</button>
+            </div>
+            <div style={{display:"flex",borderBottom:"1px solid #f0f0f0",padding:"0 12px",gap:4}}>
+              {tabs.map(t=>(
+                <button key={t.k} onClick={()=>setTab(t.k)}
+                  style={{padding:"10px 14px",background:"none",border:"none",borderBottom:`2.5px solid ${tab===t.k?"var(--or)":"transparent"}`,cursor:"pointer",fontSize:12,fontWeight:tab===t.k?700:500,color:tab===t.k?"var(--or)":"#767676",display:"flex",alignItems:"center",gap:5}}>
+                  <i className={`ti ${t.ic}`} style={{fontSize:14}}/>{t.l}
+                </button>
+              ))}
+            </div>
+            <div style={{flex:1,overflow:"auto",padding:20}}>
+              {tab==="intro"&&(
+                <>
+                  <div style={{background:"linear-gradient(135deg,#EE4D2D,#FF8557)",borderRadius:10,padding:18,color:"#fff",marginBottom:16}}>
+                    <div style={{fontSize:18,fontWeight:800,marginBottom:6}}>CLB Quản Lý Bán Hàng</div>
+                    <div style={{fontSize:12,opacity:.92,lineHeight:1.55}}>Hệ thống nội bộ cho Câu lạc bộ Sinh viên — tạo đơn, pha chế, giao hàng, theo dõi KPI và báo cáo doanh thu trong từng ca.</div>
+                  </div>
+                  <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:8}}>✨ Tính năng chính</div>
+                  <ul style={{listStyle:"none",display:"flex",flexDirection:"column",gap:8}}>
+                    {[
+                      ["📋","Tạo đơn nhanh, có thể tách Người tạo và Người nhận KPI"],
+                      ["☕","Bảng KDS (Kitchen Display) cho khu pha chế, có công thức từng món"],
+                      ["🛵","Phân công shipper, theo dõi trạng thái giao hàng"],
+                      ["🎯","KPI tự động theo từng nhân viên, có bảng xếp hạng"],
+                      ["📊","Báo cáo cuối ca, xuất CSV mở bằng Excel"],
+                      ["⚙️","Cài đặt: thêm nhân sự, sửa giá, công thức, phí ship"],
+                    ].map(([i,t],idx)=>(
+                      <li key={idx} style={{display:"flex",gap:10,padding:"8px 12px",background:"#fafafa",borderRadius:6,fontSize:12,color:"#475569",lineHeight:1.5}}>
+                        <span style={{fontSize:16,flexShrink:0}}>{i}</span><span>{t}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {tab==="role"&&(
+                <>
+                  <div style={{fontSize:12,color:"#475569",marginBottom:14,lineHeight:1.55}}>Mỗi vai trò có các quyền hạn khác nhau khi đăng nhập vào hệ thống:</div>
+                  {Object.keys(RL).map(r=>{
+                    const [tc,bg]=RC[r];
+                    return (
+                      <div key={r} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"11px 0",borderBottom:"1px solid #f5f5f5"}}>
+                        <span style={{fontSize:11,padding:"3px 10px",borderRadius:4,background:bg,color:tc,fontWeight:700,flexShrink:0,minWidth:75,textAlign:"center"}}>{RL[r]}</span>
+                        <div style={{fontSize:12,color:"#475569",lineHeight:1.5,flex:1}}>{RD[r]}</div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              {tab==="flow"&&(
+                <>
+                  <div style={{fontSize:12,color:"#475569",marginBottom:14,lineHeight:1.55}}>Quy trình chuẩn cho 1 đơn hàng:</div>
+                  {[
+                    ["1","Trực đơn nhận khách","Nhập tên + SĐT, chọn loại đơn (Tại chỗ / Ship), chọn sản phẩm"],
+                    ["2","Tạo đơn → status: Mới","Hệ thống ghi 'by' (người tạo) và 'kpi' (người nhận KPI), trừ tồn kho tự động"],
+                    ["3","Pha chế xử lý","KDS hiển thị đơn mới, bấm 'Bắt đầu pha' → 'Hoàn thành pha' → trạng thái Sẵn sàng"],
+                    ["4","Giao hàng (nếu Ship)","Phân công shipper → Đang giao → Xác nhận đã giao"],
+                    ["5","Hoàn thành → KPI","Đơn hoàn thành cộng vào KPI cho 'kpi', không phải 'by'"],
+                  ].map(([n,t,d])=>(
+                    <div key={n} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f5f5f5"}}>
+                      <div style={{width:28,height:28,borderRadius:"50%",background:"var(--or)",color:"#fff",fontSize:13,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{n}</div>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:2}}>{t}</div>
+                        <div style={{fontSize:12,color:"#475569",lineHeight:1.5}}>{d}</div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+              {tab==="acc"&&(
+                <>
+                  <div style={{fontSize:12,color:"#475569",marginBottom:14,lineHeight:1.55}}>So sánh 2 mô hình tài khoản:</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div style={{border:"1.5px solid var(--or)",borderRadius:10,padding:14,background:"#FFF4F0"}}>
+                      <div style={{fontSize:11,fontWeight:800,color:"#EE4D2D",marginBottom:4,letterSpacing:".3px"}}>★ KHUYẾN NGHỊ</div>
+                      <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:8}}>Tài khoản cá nhân (PIN)</div>
+                      <ul style={{listStyle:"none",fontSize:11,color:"#475569",lineHeight:1.7}}>
+                        <li>✅ Mỗi thành viên 1 PIN 4 số</li>
+                        <li>✅ Đăng nhập chia sẻ thiết bị</li>
+                        <li>✅ Ghi nhận chính xác ai làm gì</li>
+                        <li>✅ KPI cá nhân chính xác</li>
+                      </ul>
+                    </div>
+                    <div style={{border:"1.5px solid #e0e0e0",borderRadius:10,padding:14,background:"#fff"}}>
+                      <div style={{fontSize:11,fontWeight:800,color:"#767676",marginBottom:4,letterSpacing:".3px"}}>PHƯƠNG ÁN B</div>
+                      <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:8}}>Theo Role (thiết bị cố định)</div>
+                      <ul style={{listStyle:"none",fontSize:11,color:"#475569",lineHeight:1.7}}>
+                        <li>✅ Không cần đăng nhập</li>
+                        <li>⚠️ Mỗi máy cố định 1 vai trò</li>
+                        <li>⚠️ Không biết chính xác ai làm</li>
+                        <li>⚠️ Không tách KPI cá nhân</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div style={{marginTop:14,padding:"10px 14px",background:"#fafafa",borderRadius:8,fontSize:11,color:"#767676",lineHeight:1.5}}>
+                    💡 Demo hiện tại mô phỏng <b>mô hình cá nhân</b>. Dùng nút "Switch User" trên TopBar để chuyển vai.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   SIDEBAR + TOPBAR
+══════════════════════════════════════════════════════════ */
+function Sidebar({screen,setScreen,orders,shift}){
+  const pending  = orders.filter(o=>!["hoan_thanh","huy"].includes(o.st)).length;
+  const inKitchen= orders.filter(o=>["moi","pha_che"].includes(o.st)).length;
+  const inShip   = orders.filter(o=>o.type==="ship"&&["san_sang","dang_giao"].includes(o.st)).length;
+  const nav=[
+    {k:"dashboard",icon:"ti-layout-dashboard",label:"Tổng quan"},
+    {k:"order",    icon:"ti-clipboard-list",  label:"Trực đơn",  badge:pending||null},
+    {k:"kitchen",  icon:"ti-tools-kitchen-2", label:"Pha chế (KDS)",badge:inKitchen||null},
+    {k:"shipper",  icon:"ti-motorbike",       label:"Giao hàng", badge:inShip||null},
+    {k:"staff",    icon:"ti-users",           label:"Nhân sự & KPI"},
+    {k:"report",   icon:"ti-chart-bar",       label:"Báo cáo"},
+    {k:"settings", icon:"ti-settings",        label:"Cài đặt"},
+  ];
+  return (
+    <div style={{width:220,background:"#fff",borderRight:"1px solid var(--bd)",display:"flex",flexDirection:"column",height:"100%",flexShrink:0}}>
+      <div style={{padding:"18px 16px 14px",borderBottom:"1px solid #f0f0f0"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+          <div style={{width:30,height:30,borderRadius:6,background:"var(--or)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800}}>🛒</div>
+          <div>
+            <div style={{fontSize:12,fontWeight:800,color:"var(--or)",letterSpacing:".3px"}}>CLB BÁN HÀNG</div>
+            <div style={{fontSize:9,color:"#999"}}>v3.0 — Quản lý nội bộ</div>
+          </div>
+        </div>
+        <div style={{fontSize:10,color:"#999",marginTop:6}}>{shift.name} · {shift.start} – {shift.end}</div>
+      </div>
+      <nav style={{flex:1,padding:"6px 0",overflowY:"auto"}}>
+        {nav.map(n=>{
+          const ac=screen===n.k;
+          return (
+            <button key={n.k} onClick={()=>setScreen(n.k)}
+              style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 16px",border:"none",cursor:"pointer",textAlign:"left",fontSize:12.5,fontWeight:ac?700:500,background:ac?"var(--orl)":"transparent",color:ac?"var(--or)":"#475569",borderLeft:`3px solid ${ac?"var(--or)":"transparent"}`,transition:"background .1s"}}>
+              <i className={`ti ${n.icon}`} style={{fontSize:17}}/>
+              <span style={{flex:1}}>{n.label}</span>
+              {n.badge&&<span style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:10,background:"#ef4444",color:"#fff",minWidth:18,textAlign:"center"}}>{n.badge}</span>}
+            </button>
+          );
+        })}
+      </nav>
+      <div style={{padding:"10px 14px",borderTop:"1px solid #f0f0f0",fontSize:10,color:"#999",textAlign:"center"}}>
+        © 2026 CLB Sinh viên
+      </div>
+    </div>
+  );
+}
+
+function TopBar({title,sub,time,currentUser,staff,setCurrentUser,connStatus}){
+  const [open,setOpen] = useState(false);
+  const [tc,bg] = RC[currentUser.role]||["#475569","#f5f5f5"];
+  const conn = {
+    live:    {color:"#22c55e",text:"Realtime",pulse:true},
+    connecting:{color:"#f59e0b",text:"Đang kết nối",pulse:true},
+    offline: {color:"#ef4444",text:"Mất kết nối",pulse:false},
+  }[connStatus] || {color:"#94a3b8",text:"—",pulse:false};
+  return (
+    <div style={{padding:"11px 20px",borderBottom:"2.5px solid var(--or)",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff",flexShrink:0,position:"relative"}}>
+      <div>
+        <div style={{fontSize:15,fontWeight:700,color:"#212121"}}>{title}</div>
+        <div style={{fontSize:11,color:"#767676"}}>{sub}</div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#767676"}}>
+          <i className="ti ti-clock" style={{fontSize:13}}/>
+          <span>{time} · {todayS()}</span>
+        </div>
+        <div title={conn.text} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 8px",background:conn.color+"15",borderRadius:12}}>
+          <div style={{width:7,height:7,borderRadius:"50%",background:conn.color,animation:conn.pulse?"pulse 2s infinite":"none"}}/>
+          <span style={{fontSize:10,color:conn.color,fontWeight:700}}>{conn.text}</span>
+        </div>
+
+        <div style={{position:"relative"}}>
+          <button onClick={()=>setOpen(!open)}
+            style={{display:"flex",alignItems:"center",gap:8,padding:"5px 10px 5px 5px",background:"#fff",border:"1px solid var(--bd)",borderRadius:24,cursor:"pointer"}}>
+            <div style={{width:30,height:30,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{inits(currentUser.name)}</div>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#212121",lineHeight:1.1}}>{currentUser.name}</div>
+              <div style={{fontSize:9.5,color:tc,fontWeight:600,lineHeight:1.2}}>{RL[currentUser.role]}</div>
+            </div>
+            <i className="ti ti-chevron-down" style={{fontSize:14,color:"#999"}}/>
+          </button>
+          {open&&(
+            <>
+              <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:50}}/>
+              <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,background:"#fff",border:"1px solid var(--bd)",borderRadius:8,boxShadow:"0 4px 20px rgba(0,0,0,.1)",zIndex:51,minWidth:230,padding:6,animation:"fadeUp .15s"}}>
+                <div style={{padding:"6px 10px",fontSize:10,color:"#999",fontWeight:700,letterSpacing:".4px"}}>CHUYỂN VAI (DEMO)</div>
+                {staff.filter(s=>s.active).map(s=>{
+                  const [tc2,bg2]=RC[s.role];
+                  const cur=s.id===currentUser.id;
+                  return (
+                    <button key={s.id} onClick={()=>{setCurrentUser(s);setOpen(false);}}
+                      style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 10px",border:"none",background:cur?"#FFF4F0":"transparent",borderRadius:6,cursor:"pointer",textAlign:"left"}}>
+                      <div style={{width:26,height:26,borderRadius:"50%",background:bg2,color:tc2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{inits(s.name)}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,fontWeight:600,color:"#212121"}}>{s.name}</div>
+                        <div style={{fontSize:10,color:tc2}}>{RL[s.role]}</div>
+                      </div>
+                      {cur&&<i className="ti ti-check" style={{color:"var(--or)",fontSize:14}}/>}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   DASHBOARD
+══════════════════════════════════════════════════════════ */
+function Dashboard({orders,staff}){
+  const done  = orders.filter(o=>o.st==="hoan_thanh");
+  const rev   = done.reduce((s,o)=>s+iTot(o),0);
+  const ship  = orders.filter(o=>o.type==="ship"&&o.st==="hoan_thanh");
+  const active= orders.filter(o=>!["hoan_thanh","huy"].includes(o.st));
+  const bars  = useMemo(()=>{
+    const b=Array(8).fill(0);
+    orders.forEach(o=>{const h=parseInt((o.t||"00:00").split(":")[0],10);const i=h-7;if(i>=0&&i<8)b[i]++;});
+    return b;
+  },[orders]);
+  const maxB=Math.max(...bars,1);
+
+  const cards=[
+    {l:"Tổng đơn",v:orders.length,ic:"ti-clipboard-list",bg:"#FFF4F0",tc:"#EE4D2D"},
+    {l:"Doanh thu",v:fmt(rev),ic:"ti-cash",bg:"#dcfce7",tc:"#15803d"},
+    {l:"Đang xử lý",v:active.length,ic:"ti-loader-2",bg:"#dbeafe",tc:"#1e40af"},
+    {l:"Thu phí ship",v:fmt(ship.reduce((s,o)=>s+o.dFee,0)),ic:"ti-motorbike",bg:"#ede9fe",tc:"#5b21b6"},
+  ];
+
+  return (
+    <div style={{flex:1,overflowY:"auto",padding:18,background:"var(--bg)"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}}>
+        {cards.map(s=>(
+          <div key={s.l} className="card" style={{padding:"14px 16px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+              <div style={{fontSize:11,color:"#767676"}}>{s.l}</div>
+              <div style={{width:34,height:34,borderRadius:8,background:s.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <i className={`ti ${s.ic}`} style={{fontSize:17,color:s.tc}}/>
+              </div>
+            </div>
+            <div style={{fontSize:22,fontWeight:800,color:"#212121"}}>{s.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:12,marginBottom:12}}>
+        <div className="card" style={{padding:18}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:14}}>Đơn hàng theo giờ</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:10,height:110}}>
+            {bars.map((v,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                <div style={{fontSize:10,color:"#999",fontWeight:600}}>{v}</div>
+                <div style={{width:"100%",height:Math.round((v/maxB)*88)||3,background:i===bars.length-1?"var(--or)":"#FFD4C2",borderRadius:"4px 4px 0 0",transition:"height .5s"}}/>
+                <div style={{fontSize:10,color:"#999"}}>{7+i}h</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card" style={{padding:18}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:12}}>Trạng thái đơn</div>
+          {Object.entries(ST).map(([s,d])=>{
+            const n=orders.filter(o=>o.st===s).length;
+            return (
+              <div key={s} style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
+                <div style={{minWidth:84}}><Bdg s={s}/></div>
+                <div style={{flex:1,height:5,background:"#f5f5f5",borderRadius:3}}>
+                  <div style={{height:"100%",width:orders.length?`${Math.round((n/orders.length)*100)}%`:"0%",background:d.color,borderRadius:3,transition:"width .5s"}}/>
+                </div>
+                <span style={{fontSize:11,color:"#475569",minWidth:18,textAlign:"right",fontWeight:700}}>{n}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card" style={{padding:18}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:12}}>Đơn hàng gần đây</div>
+        <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <thead>
+            <tr>{["Mã đơn","Khách hàng","Giờ","Sản phẩm","Tổng","Loại","Người KPI","Trạng thái"].map(h=>(
+              <th key={h} style={{padding:"7px 8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px"}}>{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {[...orders].reverse().slice(0,6).map(o=>(
+              <tr key={o.id} style={{borderBottom:"1px solid #f8f8f8"}}>
+                <td style={{padding:"8px",fontFamily:"monospace",color:"var(--or)",fontWeight:700}}>{o.id}</td>
+                <td style={{padding:"8px",color:"#212121",fontWeight:600}}>{o.cus}</td>
+                <td style={{padding:"8px",color:"#767676"}}>{o.t}</td>
+                <td style={{padding:"8px",color:"#475569",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</td>
+                <td style={{padding:"8px",fontWeight:700}}>{fmt(iTot(o))}</td>
+                <td style={{padding:"8px"}}><TPill type={o.type}/></td>
+                <td style={{padding:"8px",color:"#475569",fontSize:10.5}}>{staff.find(s=>s.id===o.kpi)?.name||"—"}</td>
+                <td style={{padding:"8px"}}><Bdg s={o.st}/></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   ORDER SCREEN
+══════════════════════════════════════════════════════════ */
+function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zones,toast}){
+  const EC = {cus:"",ph:"",type:"tai_cho",adr:"",zone:0,kpi:currentUser.id,pay:"cash",disc:0,dT:"fixed",note:"",items:[]};
+  const [cat,setCat]   = useState("pha_che");
+  const [cart,setCart] = useState({...EC});
+  const [search,setSrch]= useState("");
+  const [noteFor,setNoteFor]= useState(null);
+  const noteRef = useRef(null);
+
+  // Reset KPI default when user changes
+  useEffect(()=>{ setCart(c=>({...c,kpi:currentUser.id})); },[currentUser.id]);
+
+  const sub     = cart.items.reduce((s,i)=>s+i.p*i.qty,0);
+  const dFee    = cart.type==="ship"?(zones[cart.zone]||{fee:8000}).fee:0;
+  const discAmt = cart.dT==="pct"?Math.round(sub*cart.disc/100):Math.min(cart.disc||0,sub);
+  const total   = sub+dFee-discAmt;
+
+  const visible = products.filter(p=>p.on!==false);
+  const filtered= visible.filter(p=>p.cat===cat&&(!search||p.name.toLowerCase().includes(search.toLowerCase())));
+  const cqty    = pid => (cart.items.find(i=>i.pid===pid)||{qty:0}).qty;
+
+  const addItem=p=>{
+    if(p.stock===0){toast("Sản phẩm đã hết hàng","warn");return;}
+    setCart(c=>{const ex=c.items.find(i=>i.pid===p.id);return ex?{...c,items:c.items.map(i=>i.pid===p.id?{...i,qty:i.qty+1}:i)}:{...c,items:[...c.items,{pid:p.id,name:p.name,p:p.price,qty:1,note:""}]};});
+  };
+  const setQty=(pid,q)=>{
+    if(q<=0) setCart(c=>({...c,items:c.items.filter(i=>i.pid!==pid)}));
+    else     setCart(c=>({...c,items:c.items.map(i=>i.pid===pid?{...i,qty:q}:i)}));
+  };
+  const setNote=(pid,note)=>setCart(c=>({...c,items:c.items.map(i=>i.pid===pid?{...i,note}:i)}));
+
+  const create=()=>{
+    if(!cart.cus.trim()){toast("Vui lòng nhập tên khách hàng","warn");return;}
+    if(!cart.items.length){toast("Giỏ hàng đang trống","warn");return;}
+    const num = (orders.length ? Math.max(...orders.map(o=>o.num||0)) : 0) + 1;
+    const id  = `ĐH${String(num).padStart(3,"0")}`;
+    const o={id,num,t:nowS(),cus:cart.cus.trim(),ph:cart.ph,type:cart.type,adr:cart.adr,items:cart.items.map(i=>({...i})),st:"moi",pay:cart.pay,dFee,disc:discAmt,dT:cart.dT,by:currentUser.id,kpi:cart.kpi,sid:null,note:cart.note};
+    setProducts(ps=>ps.map(p=>{const ci=cart.items.find(i=>i.pid===p.id);return ci?{...p,stock:Math.max(0,p.stock-ci.qty)}:p;}));
+    setOrders(os=>[...os,o]);
+    setCart({...EC,kpi:currentUser.id});
+    toast(`✅ Đơn ${id} tạo thành công · ${fmt(total)}`,"success");
+  };
+
+  const cancel=id=>{setOrders(os=>os.map(o=>o.id===id?{...o,st:"huy"}:o));toast("Đã huỷ đơn","warn");};
+  const active=orders.filter(o=>!["hoan_thanh","huy"].includes(o.st));
+
+  useEffect(()=>{if(noteFor&&noteRef.current)noteRef.current.focus();},[noteFor]);
+
+  return (
+    <div style={{display:"flex",flex:1,overflow:"hidden",background:"var(--bg)"}}>
+      <div style={{flex:1,minWidth:0,borderRight:"1px solid var(--bd)",display:"flex",flexDirection:"column",background:"#fff"}}>
+
+        <div style={{padding:"13px 14px 10px",borderBottom:"1px solid #f0f0f0"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 120px",gap:8,marginBottom:8}}>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Khách hàng *</div>
+              <input value={cart.cus} onChange={e=>setCart(c=>({...c,cus:e.target.value}))} placeholder="Tên khách..." style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>SĐT</div>
+              <input value={cart.ph||""} onChange={e=>setCart(c=>({...c,ph:e.target.value}))} placeholder="09xx..." style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>👤 Người tạo</div>
+              <div style={{padding:"7px 10px",background:"#f8f8f8",borderRadius:6,fontSize:11.5,color:"#475569",fontWeight:600,border:"1px solid #f0f0f0"}}>{currentUser.name}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#EE4D2D",marginBottom:3,fontWeight:700}}>🎯 Người nhận KPI</div>
+              <select value={cart.kpi} onChange={e=>setCart(c=>({...c,kpi:+e.target.value}))}
+                style={{width:"100%",padding:"7px 10px",border:`1.5px solid ${cart.kpi!==currentUser.id?"var(--or)":"var(--bd)"}`,borderRadius:6,fontSize:11,background:cart.kpi!==currentUser.id?"#FFF4F0":"#fff",cursor:"pointer",fontWeight:600}}>
+                {staff.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.name} · {RL[s.role]}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Loại đơn</div>
+            <div style={{display:"flex",gap:4}}>
+              {[["tai_cho","🏠 Tại chỗ"],["ship","🛵 Ship"]].map(([v,l])=>(
+                <button key={v} onClick={()=>setCart(c=>({...c,type:v}))}
+                  style={{flex:1,padding:"7px 4px",border:`1.5px solid ${cart.type===v?"var(--or)":"var(--bd)"}`,borderRadius:6,cursor:"pointer",background:cart.type===v?"#FFF4F0":"#fff",color:cart.type===v?"var(--or)":"#475569",fontSize:11,fontWeight:cart.type===v?700:500}}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {cart.type==="ship"&&(
+            <div style={{marginTop:8}}>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Địa chỉ giao hàng</div>
+              <input value={cart.adr} onChange={e=>setCart(c=>({...c,adr:e.target.value}))} placeholder="Tòa nhà, phòng số..." style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,marginBottom:5}}/>
+              <div style={{display:"flex",gap:4,marginBottom:7,flexWrap:"wrap"}}>
+                {["Tòa A","Tòa B","Tòa C","KTX C1","KTX D2","Thư viện"].map(t=>(
+                  <button key={t} onClick={()=>setCart(c=>({...c,adr:c.adr?c.adr+", "+t:t}))}
+                    style={{fontSize:10,padding:"3px 7px",border:"1px solid var(--bd)",borderRadius:4,background:"#fafafa",cursor:"pointer",color:"#475569"}}>{t}</button>
+                ))}
+              </div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:4,fontWeight:600}}>Phí ship theo khoảng cách</div>
+              <div style={{display:"flex",gap:4}}>
+                {zones.map((z,i)=>(
+                  <button key={i} onClick={()=>setCart(c=>({...c,zone:i}))}
+                    style={{flex:1,padding:"6px 4px",border:`1.5px solid ${cart.zone===i?"var(--or)":"var(--bd)"}`,borderRadius:6,cursor:"pointer",background:cart.zone===i?"#FFF4F0":"#fff",fontSize:10,lineHeight:1.5,textAlign:"center"}}>
+                    <div style={{fontWeight:700,color:cart.zone===i?"var(--or)":"#212121"}}>{fmt(z.fee)}</div>
+                    <div style={{fontSize:9,color:cart.zone===i?"var(--or)":"#999"}}>{z.lb}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{padding:"9px 14px 6px",borderBottom:"1px solid #f0f0f0"}}>
+          <input value={search} onChange={e=>setSrch(e.target.value)} placeholder="🔍 Tìm sản phẩm..."
+            style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,marginBottom:7}}/>
+          <div style={{display:"flex",gap:4}}>
+            {Object.entries(CL).map(([k,l])=>(
+              <button key={k} onClick={()=>{setCat(k);setSrch("");}}
+                style={{flex:1,fontSize:10.5,padding:"6px 4px",border:`1.5px solid ${cat===k?"var(--or)":"var(--bd)"}`,borderRadius:20,cursor:"pointer",background:cat===k?"var(--or)":"#fff",color:cat===k?"#fff":"#475569",fontWeight:cat===k?700:500}}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{flex:1,overflowY:"auto",padding:"10px 14px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:9}}>
+            {filtered.map(p=>{
+              const q=cqty(p.id);
+              const out=p.stock===0;
+              return (
+                <div key={p.id} style={{border:`1.5px solid ${q>0?"var(--or)":out?"#fee2e2":"#f0f0f0"}`,borderRadius:10,padding:"11px 10px 10px",background:q>0?"#FFF4F0":out?"#fafafa":"#fff",opacity:out?.55:1,transition:"all .15s"}}>
+                  <div style={{fontSize:24,marginBottom:4}}>{p.emoji}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:"#212121",marginBottom:2,lineHeight:1.3,minHeight:32}}>{p.name}</div>
+                  <div style={{fontSize:14,color:"var(--or)",fontWeight:800,marginBottom:5}}>{fmt(p.price)}</div>
+                  <div style={{marginBottom:7}}><StBdg stock={p.stock}/></div>
+                  {!out&&(q===0
+                    ? <button onClick={()=>addItem(p)} className="btn-pri" style={{width:"100%",padding:"6px",borderRadius:6,fontSize:11,fontWeight:700}}>+ Thêm</button>
+                    : <div style={{display:"flex",justifyContent:"center"}}><Qty val={q} onInc={()=>addItem(p)} onDec={()=>setQty(p.id,q-1)} max={p.stock}/></div>
+                  )}
+                  {out&&<div style={{fontSize:10,color:"#b91c1c",textAlign:"center",padding:"4px 0",fontWeight:600}}>Hết hàng</div>}
+                </div>
+              );
+            })}
+            {!filtered.length&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"32px 0",color:"#999",fontSize:12}}>Không tìm thấy sản phẩm</div>}
+          </div>
+        </div>
+
+        <div style={{borderTop:"2px solid #f0f0f0",padding:"10px 14px",background:"#fff"}}>
+          {cart.items.length>0&&(
+            <div style={{maxHeight:130,overflowY:"auto",marginBottom:8}}>
+              {cart.items.map(i=>(
+                <div key={i.pid} style={{marginBottom:7}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{flex:1,fontSize:11.5,fontWeight:600,color:"#212121",lineHeight:1.3}}>{i.name}</span>
+                    <Qty val={i.qty} onInc={()=>setQty(i.pid,i.qty+1)} onDec={()=>setQty(i.pid,i.qty-1)} min={1} sm/>
+                    <span style={{fontSize:11,color:"#475569",minWidth:60,textAlign:"right",fontWeight:600}}>{fmt(i.p*i.qty)}</span>
+                    <button onClick={()=>setQty(i.pid,0)} style={{background:"none",border:"none",cursor:"pointer",color:"#ccc",fontSize:16,lineHeight:1}}>✕</button>
+                  </div>
+                  {noteFor===i.pid
+                    ? <input ref={noteRef} value={i.note} onChange={e=>setNote(i.pid,e.target.value)} onBlur={()=>setNoteFor(null)}
+                        placeholder="Ghi chú món (VD: ít đường, không đá)..." style={{width:"100%",padding:"4px 8px",border:"1px solid var(--bd)",borderRadius:4,fontSize:11,marginTop:3}}/>
+                    : <button onClick={()=>setNoteFor(i.pid)} style={{fontSize:10,color:i.note?"var(--or)":"#999",background:"none",border:"none",cursor:"pointer",paddingLeft:0}}>
+                        {i.note?`📝 ${i.note}`:"+ Ghi chú món"}
+                      </button>
+                  }
+                </div>
+              ))}
+            </div>
+          )}
+
+          {cart.items.length>0&&(
+            <div style={{display:"flex",gap:6,marginBottom:7,alignItems:"center"}}>
+              <select value={cart.dT} onChange={e=>setCart(c=>({...c,dT:e.target.value,disc:0}))}
+                style={{width:100,padding:"6px",border:"1px solid var(--bd)",borderRadius:6,fontSize:11,background:"#fff",cursor:"pointer"}}>
+                <option value="fixed">Giảm (đ)</option>
+                <option value="pct">Giảm (%)</option>
+              </select>
+              <input type="number" min={0} max={cart.dT==="pct"?100:sub} value={cart.disc||""}
+                onChange={e=>setCart(c=>({...c,disc:+e.target.value}))} placeholder={cart.dT==="pct"?"10%":"0đ"}
+                style={{flex:1,padding:"6px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+              {discAmt>0&&<span style={{fontSize:11,color:"#15803d",fontWeight:700,whiteSpace:"nowrap"}}>-{fmt(discAmt)}</span>}
+            </div>
+          )}
+
+          {cart.items.length>0&&(
+            <div style={{background:"#FAFAFA",borderRadius:8,padding:"9px 11px",marginBottom:7,fontSize:11}}>
+              <div style={{display:"flex",justifyContent:"space-between",color:"#767676",marginBottom:3}}><span>Tạm tính</span><span>{fmt(sub)}</span></div>
+              {discAmt>0&&<div style={{display:"flex",justifyContent:"space-between",color:"#15803d",marginBottom:3,fontWeight:600}}><span>Giảm giá</span><span>-{fmt(discAmt)}</span></div>}
+              {cart.type==="ship"&&<div style={{display:"flex",justifyContent:"space-between",color:"#767676",marginBottom:3}}><span>Phí ship</span><span>{fmt(dFee)}</span></div>}
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:800,color:"#212121",borderTop:"1px dashed var(--bd)",paddingTop:5,marginTop:3}}>
+                <span>Tổng cộng</span><span style={{color:"var(--or)"}}>{fmt(total)}</span>
+              </div>
+            </div>
+          )}
+
+          <div style={{display:"flex",gap:6,marginBottom:7}}>
+            {[["cash","💵 Tiền mặt"],["qr","📱 VietQR"]].map(([v,l])=>(
+              <button key={v} onClick={()=>setCart(c=>({...c,pay:v}))}
+                style={{flex:1,padding:"7px",border:`1.5px solid ${cart.pay===v?"#22c55e":"var(--bd)"}`,borderRadius:6,cursor:"pointer",background:cart.pay===v?"#f0fdf4":"#fff",color:cart.pay===v?"#15803d":"#475569",fontSize:11,fontWeight:cart.pay===v?700:500}}>{l}</button>
+            ))}
+          </div>
+          <input value={cart.note||""} onChange={e=>setCart(c=>({...c,note:e.target.value}))} placeholder="📝 Ghi chú đơn (tùy chọn)..."
+            style={{width:"100%",padding:"6px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:11,marginBottom:8}}/>
+          <button onClick={create} disabled={!cart.items.length}
+            className={cart.items.length?"btn-pri":""}
+            style={{width:"100%",padding:"11px",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:cart.items.length?"pointer":"default",background:cart.items.length?"":"#e0e0e0",color:cart.items.length?"":"#999"}}>
+            {cart.items.length?`✓ Tạo đơn · ${fmt(total)}`:"Chọn sản phẩm để tạo đơn"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{width:340,flexShrink:0,overflowY:"auto",padding:12,background:"var(--bg)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:6,flexWrap:"wrap"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#212121"}}>Đơn đang xử lý <span style={{color:"#999",fontWeight:400}}>· {active.length}</span></div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {["moi","pha_che","san_sang","dang_giao"].map(s=>{
+              const n=orders.filter(o=>o.st===s).length;
+              return n>0&&<Bdg key={s} s={s}/>;
+            })}
+          </div>
+        </div>
+        {active.length===0&&(
+          <div style={{textAlign:"center",padding:"60px 0",color:"#999"}}>
+            <i className="ti ti-mood-happy" style={{fontSize:46,display:"block",marginBottom:10}}/>
+            <div style={{fontSize:13}}>Không có đơn nào đang xử lý</div>
+          </div>
+        )}
+        {[...active].reverse().map(o=>{
+          const byUser=staff.find(s=>s.id===o.by);
+          const kpiUser=staff.find(s=>s.id===o.kpi);
+          const splitKpi=o.by!==o.kpi;
+          return (
+            <div key={o.id} className="card fade-up" style={{marginBottom:10,padding:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,flexWrap:"wrap",gap:6}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
+                  <Bdg s={o.st}/><TPill type={o.type}/>
+                </div>
+                <span style={{fontSize:10,color:"#999"}}>{o.t}</span>
+              </div>
+              <div style={{fontSize:11,color:"#475569",marginBottom:4}}><strong style={{color:"#212121"}}>{o.cus}</strong>{o.adr?` · 📍 ${o.adr}`:""}</div>
+              <div style={{fontSize:11,color:"#767676",marginBottom:o.note?5:8,lineHeight:1.5}}>{o.items.map(i=>`${i.name}×${i.qty}${i.note?` (${i.note})`:""}`).join(" · ")}</div>
+              {o.note&&<div style={{fontSize:11,color:"var(--or)",marginBottom:8}}>📝 {o.note}</div>}
+              <div style={{fontSize:10,color:"#999",marginBottom:8,display:"flex",gap:6,flexWrap:"wrap"}}>
+                <span>Tạo: <strong style={{color:"#475569"}}>{byUser?.name||"—"}</strong></span>
+                {splitKpi&&<span>· KPI: <strong style={{color:"var(--or)"}}>🎯 {kpiUser?.name||"—"}</strong></span>}
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <span style={{fontSize:13,fontWeight:800}}>{fmt(iTot(o))}</span>
+                  <span style={{fontSize:10,color:"#999",marginLeft:6}}>{o.pay==="qr"?"📱 QR":"💵 Tiền mặt"}</span>
+                </div>
+                <button onClick={()=>cancel(o.id)}
+                  style={{fontSize:11,padding:"5px 11px",border:"1.5px solid #fca5a5",borderRadius:6,background:"#fff",color:"#b91c1c",cursor:"pointer",fontWeight:600}}>✕ Huỷ đơn</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   KITCHEN (KDS)
+══════════════════════════════════════════════════════════ */
+function KitchenScreen({orders,setOrders,products,setProducts,toast}){
+  const [recipe,setRecipe] = useState(null);
+  const [now,setNow] = useState(new Date());
+  useEffect(()=>{const t=setInterval(()=>setNow(new Date()),60000);return()=>clearInterval(t);},[]);
+  const NOW = now.getHours()*60 + now.getMinutes();
+  const elapsed = t => {const[h,m]=(t||"00:00").split(":").map(Number);const d=NOW-(h*60+m);return d>=0?d:0;};
+
+  const advance=o=>{
+    const ns=nxSt(o); if(!ns) return;
+    setOrders(os=>os.map(x=>x.id===o.id?{...x,st:ns}:x));
+    toast(`${o.id} → ${ST[ns]?.label}`,"success");
+  };
+
+  const cols=[
+    {k:"moi",     bg:"#FFF8F4",btnBg:"var(--or)",btnC:"#fff"},
+    {k:"pha_che", bg:"#eff6ff",btnBg:"#1e40af",btnC:"#fff"},
+    {k:"san_sang",bg:"#faf5ff",btnBg:"#15803d",btnC:"#fff"},
+  ];
+
+  const saveRecipe=(id,updated)=>setProducts(ps=>ps.map(p=>p.id===id?{...p,recipe:updated}:p));
+
+  return (
+    <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",background:"var(--bg)"}}>
+      <div style={{padding:"7px 16px",borderBottom:"1px solid var(--bd)",background:"#fff",display:"flex",alignItems:"center",gap:8,overflowX:"auto",flexShrink:0,minHeight:42}}>
+        <span style={{fontSize:10,color:"#999",flexShrink:0,fontWeight:700,letterSpacing:".5px"}}>CÔNG THỨC:</span>
+        {products.filter(p=>p.cat==="pha_che"&&p.on!==false).map(p=>(
+          <button key={p.id} onClick={()=>setRecipe(p)}
+            style={{fontSize:11,padding:"4px 10px",border:"1px solid var(--bd)",borderRadius:20,background:"#fafafa",cursor:"pointer",color:"#475569",whiteSpace:"nowrap",flexShrink:0,fontWeight:500}}>
+            {p.emoji} {p.name}
+          </button>
+        ))}
+      </div>
+
+      <div style={{flex:1,overflow:"hidden",display:"flex"}}>
+        {cols.map((col,ci)=>{
+          const colOrders=orders.filter(o=>o.st===col.k);
+          return (
+            <div key={col.k} style={{flex:1,borderRight:ci<2?"1px solid var(--bd)":"none",background:col.bg,overflowY:"auto",display:"flex",flexDirection:"column"}}>
+              <div style={{padding:"11px 14px",borderBottom:"1px solid rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,.85)",flexShrink:0,position:"sticky",top:0,zIndex:1}}>
+                <Bdg s={col.k}/>
+                <span style={{fontSize:11,color:"#767676"}}>{colOrders.length} đơn</span>
+                {col.k==="moi"&&colOrders.length>0&&<span style={{fontSize:10,color:"#ef4444",fontWeight:700,marginLeft:"auto",animation:"pulse 2s infinite"}}>● Cần xử lý</span>}
+              </div>
+              <div style={{padding:10,display:"flex",flexDirection:"column",gap:10}}>
+                {colOrders.map(o=>{
+                  const mins=elapsed(o.t);
+                  const urgent=mins>15;
+                  return (
+                    <div key={o.id} style={{background:"#fff",border:`2px solid ${urgent?"#fca5a5":"var(--bd)"}`,borderRadius:10,padding:13,transition:"border .2s"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                        <span style={{fontFamily:"monospace",fontWeight:800,color:"var(--or)",fontSize:15}}>{o.id}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}>
+                          {urgent&&<span style={{fontSize:9,color:"#fff",fontWeight:800,background:"#ef4444",padding:"2px 5px",borderRadius:4}}>TRỄ</span>}
+                          <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,background:urgent?"#fee2e2":"#f5f5f5",color:urgent?"#b91c1c":"#767676",fontWeight:600}}>{mins}p</span>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:9}}>
+                        <span style={{fontSize:11.5,color:"#212121",fontWeight:600}}>{o.cus}</span>
+                        <TPill type={o.type}/>
+                      </div>
+                      {o.items.map((item,ii)=>{
+                        const prod=products.find(p=>p.id===item.pid);
+                        return (
+                          <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,color:"#212121",padding:"5px 0",borderBottom:ii<o.items.length-1?"1px dashed #f5f5f5":"none"}}>
+                            <div style={{lineHeight:1.4,flex:1}}>
+                              <span style={{fontWeight:600}}>{item.name}</span>
+                              {item.note&&<div style={{fontSize:10,color:"var(--or)"}}>📝 {item.note}</div>}
+                            </div>
+                            <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                              <span style={{fontWeight:800,fontSize:16}}>×{item.qty}</span>
+                              {prod?.cat==="pha_che"&&(
+                                <button onClick={()=>setRecipe(prod)}
+                                  style={{fontSize:10,padding:"2px 7px",border:"1px solid #FFD4C2",borderRadius:4,background:"#FFF4F0",color:"var(--or)",cursor:"pointer",fontWeight:700}}>CT</button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {o.note&&<div style={{fontSize:10,color:"var(--or)",marginTop:6,fontStyle:"italic"}}>📝 {o.note}</div>}
+                      {nxLb(o)&&(
+                        <button onClick={()=>advance(o)}
+                          style={{width:"100%",marginTop:10,padding:"9px",background:col.btnBg,border:"none",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",color:col.btnC}}>
+                          {nxLb(o)}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                {colOrders.length===0&&<div style={{textAlign:"center",padding:"30px 0",color:"#999",fontSize:12}}>Không có đơn</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {recipe&&<RecipeModal product={recipe} onClose={()=>setRecipe(null)}
+        onSave={updated=>saveRecipe(recipe.id,updated)} toast={toast}/>}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   SHIPPER SCREEN
+══════════════════════════════════════════════════════════ */
+function ShipperScreen({orders,setOrders,staff,toast}){
+  const ship    = orders.filter(o=>o.type==="ship");
+  const shippers= staff.filter(s=>s.role==="shipper"&&s.active);
+  const done    = ship.filter(o=>o.st==="hoan_thanh");
+
+  const stats=[
+    {l:"Chờ lấy hàng",  v:ship.filter(o=>o.st==="san_sang").length,ic:"ti-clock",       bg:"#ede9fe",tc:"#5b21b6"},
+    {l:"Đang giao",     v:ship.filter(o=>o.st==="dang_giao").length,ic:"ti-motorbike",   bg:"#ffedd5",tc:"#c2410c"},
+    {l:"Hoàn thành",    v:done.length,                              ic:"ti-circle-check",bg:"#dcfce7",tc:"#15803d"},
+    {l:"Doanh thu ship",v:fmt(done.reduce((s,o)=>s+o.dFee,0)),      ic:"ti-cash",        bg:"#FFF4F0",tc:"#EE4D2D"},
+  ];
+
+  const assign=(oid,sid)=>{
+    setOrders(os=>os.map(o=>o.id===oid?{...o,st:"dang_giao",sid}:o));
+    toast(`Phân công ${staff.find(s=>s.id===sid)?.name} → đơn ${oid}`,"success");
+  };
+  const complete= oid=>{setOrders(os=>os.map(o=>o.id===oid?{...o,st:"hoan_thanh"}:o));toast("✓ Giao hàng thành công","success");};
+  const issue   = oid=>{setOrders(os=>os.map(o=>o.id===oid?{...o,st:"huy"}:o));toast("⚠ Đã ghi nhận sự cố","warn");};
+
+  return (
+    <div style={{flex:1,overflowY:"auto",padding:16,background:"var(--bg)"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+        {stats.map(s=>(
+          <div key={s.l} className="card" style={{padding:"13px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+              <div style={{fontSize:11,color:"#767676"}}>{s.l}</div>
+              <div style={{width:32,height:32,borderRadius:7,background:s.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><i className={`ti ${s.ic}`} style={{fontSize:15,color:s.tc}}/></div>
+            </div>
+            <div style={{fontSize:22,fontWeight:800,color:"#212121"}}>{s.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14}}>
+        {[{s:"san_sang"},{s:"dang_giao"},{s:"hoan_thanh"}].map(({s})=>{
+          const items=ship.filter(o=>o.st===s);
+          return (
+            <div key={s} className="card" style={{overflow:"hidden"}}>
+              <div style={{padding:"10px 14px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
+                <Bdg s={s}/><span style={{fontSize:11,color:"#767676"}}>{items.length} đơn</span>
+              </div>
+              <div style={{padding:10,display:"flex",flexDirection:"column",gap:8}}>
+                {items.map(o=>(
+                  <div key={o.id} style={{border:"1px solid #f0f0f0",borderRadius:8,padding:11}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontFamily:"monospace",fontSize:12,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
+                      <span style={{fontSize:10,color:"#767676"}}>{o.t}</span>
+                    </div>
+                    <div style={{fontSize:12,color:"#212121",fontWeight:700,marginBottom:2}}>{o.cus}</div>
+                    {o.ph&&<div style={{fontSize:11,color:"#767676",marginBottom:2}}>📱 {o.ph}</div>}
+                    <div style={{fontSize:11,color:"#767676",marginBottom:5,lineHeight:1.4}}>📍 {o.adr}</div>
+                    <div style={{fontSize:11,color:"#475569",marginBottom:8,lineHeight:1.4}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:s==="san_sang"?8:0}}>
+                      <span style={{fontSize:12,color:"var(--or)",fontWeight:800}}>Ship {fmt(o.dFee)}</span>
+                      {s==="dang_giao"&&(
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={()=>issue(o.id)} style={{fontSize:10,padding:"4px 8px",background:"#fee2e2",border:"none",borderRadius:5,color:"#b91c1c",cursor:"pointer",fontWeight:600}}>⚠ Lỗi</button>
+                          <button onClick={()=>complete(o.id)} style={{fontSize:10,padding:"4px 8px",background:"#dcfce7",border:"none",borderRadius:5,color:"#15803d",cursor:"pointer",fontWeight:700}}>Xong ✓</button>
+                        </div>
+                      )}
+                    </div>
+                    {s==="san_sang"&&(
+                      <>
+                        <div style={{fontSize:10,color:"#767676",marginBottom:5,fontWeight:600}}>Chọn shipper:</div>
+                        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                          {shippers.map(sh=>{
+                            const busy=orders.some(x=>x.sid===sh.id&&x.st==="dang_giao");
+                            return (
+                              <button key={sh.id} onClick={()=>assign(o.id,sh.id)}
+                                style={{fontSize:11,padding:"5px 9px",background:busy?"#fff5f5":"#fff",border:`1px solid ${busy?"#fca5a5":"var(--bd)"}`,borderRadius:5,color:busy?"#dc2626":"#475569",cursor:"pointer",fontWeight:600}}>
+                                {sh.name.split(" ").slice(-1)[0]}{busy?" 🔴":""}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    {s==="dang_giao"&&o.sid&&(
+                      <div style={{fontSize:10,color:"#999",marginTop:4}}>Shipper: {staff.find(x=>x.id===o.sid)?.name}</div>
+                    )}
+                  </div>
+                ))}
+                {items.length===0&&<div style={{textAlign:"center",padding:"24px 0",color:"#999",fontSize:11}}>Trống</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="card" style={{padding:14}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>Trạng thái Shipper ca này</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          {shippers.map(s=>{
+            const act=orders.filter(o=>o.sid===s.id&&o.st==="dang_giao");
+            const dn =orders.filter(o=>o.sid===s.id&&o.st==="hoan_thanh");
+            return (
+              <div key={s.id} style={{border:`1.5px solid ${act.length?"#fdba74":"#f0f0f0"}`,borderRadius:9,padding:"11px 14px",display:"flex",alignItems:"center",gap:10,minWidth:185,background:act.length?"#fffbeb":"#fff"}}>
+                <div style={{width:38,height:38,borderRadius:"50%",background:"#fff7ed",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#c2410c",fontWeight:800}}>{inits(s.name)}</div>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#212121"}}>{s.name}</div>
+                  <div style={{fontSize:10,color:act.length?"#c2410c":"#22c55e",fontWeight:600}}>{act.length?`🛵 Đang giao ${act.length} đơn`:"● Sẵn sàng"}</div>
+                  <div style={{fontSize:10,color:"#999"}}>✓ Đã giao: {dn.length} đơn</div>
+                </div>
+              </div>
+            );
+          })}
+          {shippers.length===0&&<div style={{color:"#999",fontSize:12,padding:"14px"}}>Chưa có shipper nào đang trực</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   STAFF SCREEN
+══════════════════════════════════════════════════════════ */
+function StaffScreen({orders,staff}){
+  const kpi=sid=>{
+    const mine=orders.filter(o=>o.kpi===sid&&o.st==="hoan_thanh");
+    return {cnt:mine.length,rev:mine.reduce((s,o)=>s+iTot(o),0)};
+  };
+  return (
+    <div style={{flex:1,overflowY:"auto",padding:16,background:"var(--bg)"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}}>
+        {["truong_ca","truc_don","pha_che","shipper","admin"].map(role=>{
+          const [tc]=RC[role]||["#475569"];
+          return (
+            <div key={role} className="card" style={{padding:"14px",textAlign:"center"}}>
+              <div style={{fontSize:24,fontWeight:800,color:tc,marginBottom:2}}>{staff.filter(s=>s.role===role).length}</div>
+              <div style={{fontSize:11,color:"#767676"}}>{RL[role]}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>Nhân sự · KPI hôm nay</div>
+        <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <thead>
+            <tr>{["Thành viên","Vai trò","Check-in","Trạng thái","Đơn KPI","Doanh thu KPI"].map(h=>(
+              <th key={h} style={{padding:"7px 8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px"}}>{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {staff.map(s=>{
+              const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+              const k=kpi(s.id);
+              return (
+                <tr key={s.id} style={{borderBottom:"1px solid #f8f8f8",opacity:s.active?1:.55}}>
+                  <td style={{padding:"9px 8px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:30,height:30,borderRadius:"50%",background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:tc,fontWeight:800,flexShrink:0}}>{inits(s.name)}</div>
+                      <span style={{color:"#212121",fontWeight:700}}>{s.name}</span>
+                    </div>
+                  </td>
+                  <td style={{padding:"9px 8px"}}><span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:bg,color:tc,fontWeight:700}}>{RL[s.role]}</span></td>
+                  <td style={{padding:"9px 8px",color:"#767676"}}>{s.checkin}</td>
+                  <td style={{padding:"9px 8px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:s.active?"#22c55e":"#cbd5e1"}}/>
+                      <span style={{fontSize:11,color:s.active?"#15803d":"#94a3b8",fontWeight:600}}>{s.active?"Đang trực":"Nghỉ"}</span>
+                    </div>
+                  </td>
+                  <td style={{padding:"9px 8px"}}><span style={{fontSize:14,fontWeight:800,color:k.cnt>0?"var(--or)":"#999"}}>{k.cnt} đơn</span></td>
+                  <td style={{padding:"9px 8px"}}><span style={{fontSize:12,fontWeight:700,color:k.rev>0?"#15803d":"#999"}}>{k.rev>0?fmt(k.rev):"—"}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      <div className="card" style={{padding:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>🏆 Bảng xếp hạng KPI</div>
+        {[...staff].filter(s=>s.active).sort((a,b)=>kpi(b.id).rev-kpi(a.id).rev).map((s,i)=>{
+          const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+          const k=kpi(s.id);
+          const medal=["🥇","🥈","🥉"][i]||`#${i+1}`;
+          return (
+            <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #f8f8f8"}}>
+              <span style={{fontSize:i<3?20:13,minWidth:28,textAlign:"center"}}>{medal}</span>
+              <div style={{width:30,height:30,borderRadius:"50%",background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:tc,fontWeight:800}}>{inits(s.name)}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12.5,color:"#212121",fontWeight:700}}>{s.name}</div>
+                <div style={{fontSize:10,color:"#767676"}}>{RL[s.role]}</div>
+              </div>
+              <span style={{fontSize:11,color:"#767676"}}>{k.cnt} đơn</span>
+              <span style={{fontSize:13,fontWeight:800,color:k.rev>0?"#15803d":"#999",minWidth:100,textAlign:"right"}}>{k.rev>0?fmt(k.rev):"—"}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   REPORT SCREEN
+══════════════════════════════════════════════════════════ */
+function ReportScreen({orders,staff,products,shift,toast}){
+  const done    = orders.filter(o=>o.st==="hoan_thanh");
+  const rev     = done.reduce((s,o)=>s+iTot(o),0);
+  const cashRev = done.filter(o=>o.pay==="cash").reduce((s,o)=>s+iTot(o),0);
+  const qrRev   = done.filter(o=>o.pay==="qr").reduce((s,o)=>s+iTot(o),0);
+  const shipRev = done.filter(o=>o.type==="ship").reduce((s,o)=>s+o.dFee,0);
+  const discTot = done.reduce((s,o)=>s+o.disc,0);
+
+  const topProds=products.map(p=>{
+    const qty=done.reduce((s,o)=>s+o.items.filter(i=>i.pid===p.id).reduce((s2,i)=>s2+i.qty,0),0);
+    return {name:p.name,emoji:p.emoji,qty,rev:qty*p.price};
+  }).filter(p=>p.qty>0).sort((a,b)=>b.rev-a.rev);
+
+  const exportCSV=()=>{
+    const rows=[["Mã đơn","Khách","SĐT","Giờ","Loại","Địa chỉ","Sản phẩm","Tổng tiền","Thanh toán","Trạng thái","Người tạo","Người KPI"]];
+    orders.forEach(o=>rows.push([
+      o.id, o.cus, o.ph||"", o.t, o.type, o.adr,
+      o.items.map(i=>`${i.name}x${i.qty}`).join(";"),
+      iTot(o), o.pay, ST[o.st]?.label||"",
+      staff.find(s=>s.id===o.by)?.name||"—",
+      staff.find(s=>s.id===o.kpi)?.name||"—",
+    ]));
+    const csv="﻿"+rows.map(r=>r.map(c=>`"${c}"`).join(",")).join("\n");
+    const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),download:`BaoCao_${todayS().replace(/\//g,"-")}.csv`});
+    a.click(); URL.revokeObjectURL(a.href);
+    toast("✅ Xuất báo cáo CSV thành công","success");
+  };
+
+  const cards=[
+    {l:"Tổng đơn",v:orders.length,sub:`${done.length} hoàn thành`,c:"#1e40af",bg:"#dbeafe"},
+    {l:"Doanh thu",v:fmt(rev),sub:`+ Ship ${fmt(shipRev)}`,c:"#15803d",bg:"#dcfce7"},
+    {l:"Tiền mặt",v:fmt(cashRev),sub:`${done.filter(o=>o.pay==="cash").length} đơn`,c:"#5b21b6",bg:"#ede9fe"},
+    {l:"VietQR",v:fmt(qrRev),sub:`${done.filter(o=>o.pay==="qr").length} đơn`,c:"#0f766e",bg:"#ccfbf1"},
+    {l:"Đã giảm giá",v:fmt(discTot),sub:`${orders.filter(o=>o.disc>0).length} đơn KM`,c:"#EE4D2D",bg:"#FFF4F0"},
+  ];
+
+  return (
+    <div style={{flex:1,overflowY:"auto",padding:16,background:"var(--bg)"}}>
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:800,color:"#212121"}}>Báo cáo {shift.name} — {todayS()}</div>
+            <div style={{fontSize:11,color:"#767676"}}>{shift.start} – Hiện tại · Trưởng ca: {staff.find(s=>s.role==="truong_ca"&&s.active)?.name||"—"}</div>
+          </div>
+          <button onClick={exportCSV} className="btn-pri" style={{display:"flex",alignItems:"center",gap:6,padding:"9px 18px",borderRadius:8,fontSize:12}}>
+            <i className="ti ti-download"/>Xuất CSV
+          </button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
+          {cards.map(s=>(
+            <div key={s.l} style={{background:s.bg,borderRadius:8,padding:"12px 14px"}}>
+              <div style={{fontSize:10,color:s.c,opacity:.75,marginBottom:3,fontWeight:700}}>{s.l}</div>
+              <div style={{fontSize:15,fontWeight:800,color:s.c,marginBottom:2}}>{s.v}</div>
+              <div style={{fontSize:10,color:s.c,opacity:.65}}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div className="card" style={{padding:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>🔥 Sản phẩm bán chạy</div>
+          {topProds.length===0&&<div style={{color:"#999",fontSize:12,textAlign:"center",padding:"24px 0"}}>Chưa có đơn hoàn thành</div>}
+          {topProds.map(({name,emoji,qty,rev},i)=>(
+            <div key={name} style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
+              <span style={{width:22,height:22,borderRadius:4,background:i<3?"#FFF4F0":"#f5f5f5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:i<3?"var(--or)":"#767676",fontWeight:800}}>{i+1}</span>
+              <span style={{fontSize:14}}>{emoji}</span>
+              <span style={{flex:1,fontSize:11.5,color:"#212121",fontWeight:600}}>{name}</span>
+              <span style={{fontSize:11,color:"#767676",minWidth:24,textAlign:"right"}}>×{qty}</span>
+              <span style={{fontSize:11,fontWeight:700,color:"#212121",minWidth:75,textAlign:"right"}}>{fmt(rev)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="card" style={{padding:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>📋 Log hoạt động</div>
+          <div style={{maxHeight:300,overflowY:"auto"}}>
+            {[...orders].reverse().slice(0,15).map((o,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"6px 0",borderBottom:"1px solid #f8f8f8"}}>
+                <span style={{fontSize:10,color:"#999",minWidth:36,flexShrink:0}}>{o.t}</span>
+                <div style={{width:7,height:7,borderRadius:"50%",marginTop:5,flexShrink:0,
+                  background:o.st==="hoan_thanh"?"#22c55e":o.st==="huy"?"#ef4444":o.st==="moi"?"var(--or)":"#60a5fa"}}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,color:"#212121",fontWeight:500,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                    <span>Đơn {o.id}</span><Bdg s={o.st}/>
+                  </div>
+                  <div style={{fontSize:10,color:"#999",marginTop:2}}>
+                    Tạo: {staff.find(s=>s.id===o.by)?.name||"—"} → KPI: {staff.find(s=>s.id===o.kpi)?.name||"—"} · {o.cus}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   SETTINGS SCREEN
+══════════════════════════════════════════════════════════ */
+function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shift,setShift,currentUser,toast}){
+  const [tab,setTab] = useState("staff");
+  const [recipe,setRecipe] = useState(null);
+
+  const tabs=[
+    {k:"staff", l:"Nhân sự & Tài khoản",ic:"ti-users"},
+    {k:"prod",  l:"Sản phẩm & Tồn kho", ic:"ti-package"},
+    {k:"gen",   l:"Cài đặt chung",      ic:"ti-settings-2"},
+  ];
+
+  return (
+    <div style={{flex:1,overflowY:"auto",padding:16,background:"var(--bg)"}}>
+      <div style={{display:"flex",gap:6,marginBottom:14,borderBottom:"1px solid var(--bd)",background:"#fff",borderRadius:"8px 8px 0 0",padding:"0 8px"}}>
+        {tabs.map(t=>(
+          <button key={t.k} onClick={()=>setTab(t.k)}
+            style={{padding:"12px 16px",background:"none",border:"none",borderBottom:`2.5px solid ${tab===t.k?"var(--or)":"transparent"}`,cursor:"pointer",fontSize:12.5,fontWeight:tab===t.k?700:500,color:tab===t.k?"var(--or)":"#767676",display:"flex",alignItems:"center",gap:6}}>
+            <i className={`ti ${t.ic}`} style={{fontSize:15}}/>{t.l}
+          </button>
+        ))}
+      </div>
+
+      {tab==="staff"&&<StaffSettings staff={staff} setStaff={setStaff} currentUser={currentUser} toast={toast}/>}
+      {tab==="prod" &&<ProductSettings products={products} setProducts={setProducts} setRecipe={setRecipe} toast={toast}/>}
+      {tab==="gen"  &&<GeneralSettings zones={zones} setZones={setZones} shift={shift} setShift={setShift} staff={staff} products={products} toast={toast}/>}
+
+      {recipe&&<RecipeModal product={recipe} onClose={()=>setRecipe(null)}
+        onSave={updated=>setProducts(ps=>ps.map(p=>p.id===recipe.id?{...p,recipe:updated}:p))} toast={toast}/>}
+    </div>
+  );
+}
+
+function StaffSettings({staff,setStaff,currentUser,toast}){
+  const [adding,setAdding] = useState(false);
+  const [editing,setEditing] = useState(null);
+  const [form,setForm] = useState({name:"",role:"truc_don",pin:""});
+
+  const submit=()=>{
+    if(!form.name.trim()){toast("Vui lòng nhập họ tên","warn");return;}
+    if(!/^\d{4}$/.test(form.pin)){toast("PIN phải là 4 chữ số","warn");return;}
+    if(staff.some(s=>s.pin===form.pin&&s.id!==editing?.id)){toast("PIN trùng với người khác","warn");return;}
+    if(editing){
+      setStaff(ss=>ss.map(s=>s.id===editing.id?{...s,name:form.name.trim(),role:form.role,pin:form.pin}:s));
+      toast("Đã cập nhật","success");
+      setEditing(null);
+    }else{
+      const id=Math.max(0,...staff.map(s=>s.id))+1;
+      setStaff(ss=>[...ss,{id,name:form.name.trim(),role:form.role,checkin:nowS(),active:true,pin:form.pin}]);
+      toast("Đã thêm thành viên","success");
+      setAdding(false);
+    }
+    setForm({name:"",role:"truc_don",pin:""});
+  };
+
+  const remove=s=>{
+    if(s.id===currentUser.id){toast("Không thể xoá tài khoản đang đăng nhập","warn");return;}
+    if(!confirm(`Xoá ${s.name}?`)) return;
+    setStaff(ss=>ss.filter(x=>x.id!==s.id));
+    toast(`Đã xoá ${s.name}`,"info");
+  };
+
+  const startEdit=s=>{
+    setEditing(s); setAdding(false);
+    setForm({name:s.name,role:s.role,pin:s.pin});
+  };
+
+  const toggleActive=s=>setStaff(ss=>ss.map(x=>x.id===s.id?{...x,active:!x.active}:x));
+
+  return (
+    <>
+      <div style={{background:"#FFF4F0",border:"1px solid #FFD4C2",borderRadius:8,padding:"11px 14px",marginBottom:14,fontSize:11.5,color:"#92400e",lineHeight:1.55,display:"flex",gap:8}}>
+        <i className="ti ti-info-circle" style={{fontSize:16,color:"var(--or)",flexShrink:0,marginTop:1}}/>
+        <span><b>Khuyến nghị:</b> Mỗi thành viên có 1 PIN 4 số riêng để hệ thống ghi nhận chính xác KPI cá nhân và lịch sử thao tác.</span>
+      </div>
+
+      <div className="card" style={{padding:14,marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>Danh sách thành viên ({staff.length})</div>
+          {!adding&&!editing&&<button onClick={()=>{setAdding(true);setForm({name:"",role:"truc_don",pin:""});}}
+            className="btn-pri" style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:6,fontSize:12}}>
+            <i className="ti ti-plus" style={{fontSize:14}}/>Thêm thành viên
+          </button>}
+        </div>
+
+        {(adding||editing)&&(
+          <div style={{background:"#fafafa",border:"1px solid #f0f0f0",borderRadius:8,padding:14,marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#212121",marginBottom:10}}>{editing?`Chỉnh sửa: ${editing.name}`:"Thêm thành viên mới"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 110px auto",gap:8,alignItems:"end"}}>
+              <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Họ tên</div>
+                <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Nguyễn Văn A" style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Vai trò</div>
+                <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}
+                  style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,background:"#fff",cursor:"pointer"}}>
+                  {Object.entries(RL).map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>PIN (4 số)</div>
+                <input value={form.pin} maxLength={4} onChange={e=>setForm(f=>({...f,pin:e.target.value.replace(/\D/g,"")}))} placeholder="0000" style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,fontFamily:"monospace",letterSpacing:"3px",textAlign:"center"}}/>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={submit} className="btn-pri" style={{padding:"8px 14px",borderRadius:6,fontSize:12}}>{editing?"Lưu":"Thêm"}</button>
+                <button onClick={()=>{setAdding(false);setEditing(null);}}
+                  style={{padding:"8px 14px",border:"1px solid var(--bd)",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#475569"}}>Huỷ</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+          <thead>
+            <tr>{["","Tên","Vai trò","PIN","Hoạt động","Mô tả","Thao tác"].map(h=>(
+              <th key={h} style={{padding:"8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px"}}>{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {staff.map(s=>{
+              const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+              return (
+                <tr key={s.id} style={{borderBottom:"1px solid #f8f8f8"}}>
+                  <td style={{padding:"9px 8px"}}>
+                    <div style={{width:30,height:30,borderRadius:"50%",background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:tc,fontWeight:800}}>{inits(s.name)}</div>
+                  </td>
+                  <td style={{padding:"9px 8px",color:"#212121",fontWeight:700}}>
+                    {s.name}{s.id===currentUser.id&&<span style={{fontSize:9,marginLeft:6,padding:"2px 6px",background:"#FFF4F0",color:"var(--or)",borderRadius:3,fontWeight:700}}>BẠN</span>}
+                  </td>
+                  <td style={{padding:"9px 8px"}}><span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:bg,color:tc,fontWeight:700}}>{RL[s.role]}</span></td>
+                  <td style={{padding:"9px 8px",fontFamily:"monospace",letterSpacing:"2px",color:"#767676"}}>••••</td>
+                  <td style={{padding:"9px 8px"}}><Tog on={s.active} onChange={()=>toggleActive(s)} sm/></td>
+                  <td style={{padding:"9px 8px",color:"#767676",fontSize:10.5,maxWidth:240}}>{RD[s.role]}</td>
+                  <td style={{padding:"9px 8px"}}>
+                    <div style={{display:"flex",gap:5}}>
+                      <button onClick={()=>startEdit(s)} style={{fontSize:10,padding:"4px 9px",border:"1px solid var(--bd)",borderRadius:5,background:"#fff",cursor:"pointer",color:"#475569"}}>Sửa</button>
+                      <button onClick={()=>remove(s)} disabled={s.id===currentUser.id}
+                        style={{fontSize:10,padding:"4px 9px",border:`1px solid ${s.id===currentUser.id?"#f0f0f0":"#fca5a5"}`,borderRadius:5,background:s.id===currentUser.id?"#fafafa":"#fff",cursor:s.id===currentUser.id?"not-allowed":"pointer",color:s.id===currentUser.id?"#cbd5e1":"#b91c1c"}}>Xoá</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ProductSettings({products,setProducts,setRecipe,toast}){
+  const [editPrice,setEditPrice] = useState(null);
+  const [priceVal,setPriceVal]   = useState(0);
+  const [adding,setAdding]       = useState(false);
+  const [form,setForm]           = useState({emoji:"🍹",name:"",cat:"pha_che",price:"",stock:""});
+
+  const togOn=p=>setProducts(ps=>ps.map(x=>x.id===p.id?{...x,on:!(x.on!==false)}:x));
+  const setStock=(p,v)=>setProducts(ps=>ps.map(x=>x.id===p.id?{...x,stock:Math.max(0,v|0)}:x));
+  const savePrice=p=>{
+    setProducts(ps=>ps.map(x=>x.id===p.id?{...x,price:Math.max(0,priceVal|0)}:x));
+    setEditPrice(null);
+    toast("Đã cập nhật giá","success");
+  };
+
+  const submit=()=>{
+    if(!form.name.trim()){toast("Vui lòng nhập tên sản phẩm","warn");return;}
+    if(!form.price||+form.price<=0){toast("Giá phải lớn hơn 0","warn");return;}
+    const id=Math.max(0,...products.map(p=>p.id))+1;
+    const p={
+      id,
+      name:form.name.trim(),
+      cat:form.cat,
+      price:+form.price,
+      stock:Math.max(0,+form.stock|0),
+      on:true,
+      emoji:form.emoji||"🍹",
+      recipe:{serves:1,prep:"3 phút",ing:[],steps:[]},
+    };
+    setProducts(ps=>[...ps,p]);
+    setForm({emoji:"🍹",name:"",cat:"pha_che",price:"",stock:""});
+    setAdding(false);
+    toast(`Đã thêm sản phẩm "${p.name}"`,"success");
+  };
+
+  const remove=p=>{
+    if(!confirm(`Xoá sản phẩm "${p.name}"?\n\nLưu ý: Sản phẩm đã có trong đơn cũ vẫn được giữ nguyên trong lịch sử.`)) return;
+    setProducts(ps=>ps.filter(x=>x.id!==p.id));
+    toast(`Đã xoá "${p.name}"`,"info");
+  };
+
+  const EMOJI_PRESETS=["☕","🧋","🍵","🍓","🍊","🥤","🍰","🥖","🥪","🍔","🍟","🍜","🍪","🧀","🍩","🍫","🍦","🍮","🍿","⚡","🥗","🍎","🍌","🥑"];
+
+  return (
+    <div className="card" style={{padding:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>Sản phẩm ({products.length})</div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:11,color:"#767676"}}>Click giá để chỉnh · Tắt toggle để ẩn</span>
+          {!adding&&<button onClick={()=>setAdding(true)} className="btn-pri" style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:6,fontSize:12}}>
+            <i className="ti ti-plus" style={{fontSize:14}}/>Thêm sản phẩm
+          </button>}
+        </div>
+      </div>
+
+      {adding&&(
+        <div style={{background:"#fafafa",border:"1px solid #f0f0f0",borderRadius:8,padding:14,marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#212121",marginBottom:10}}>Thêm sản phẩm mới</div>
+          <div style={{display:"grid",gridTemplateColumns:"60px 1.5fr 1fr 110px 90px auto",gap:8,alignItems:"end",marginBottom:10}}>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Emoji</div>
+              <input value={form.emoji} onChange={e=>setForm(f=>({...f,emoji:e.target.value}))}
+                style={{width:"100%",padding:"7px 6px",border:"1px solid var(--bd)",borderRadius:6,fontSize:18,textAlign:"center"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Tên sản phẩm *</div>
+              <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="VD: Cà phê đá xay"
+                style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Danh mục</div>
+              <select value={form.cat} onChange={e=>setForm(f=>({...f,cat:e.target.value}))}
+                style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,background:"#fff",cursor:"pointer"}}>
+                {Object.entries(CL).map(([k,l])=><option key={k} value={k}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Giá (đ) *</div>
+              <input type="number" value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} placeholder="20000"
+                style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Tồn kho</div>
+              <input type="number" value={form.stock} onChange={e=>setForm(f=>({...f,stock:e.target.value}))} placeholder="0"
+                style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={submit} className="btn-pri" style={{padding:"8px 14px",borderRadius:6,fontSize:12}}>Thêm</button>
+              <button onClick={()=>{setAdding(false);setForm({emoji:"🍹",name:"",cat:"pha_che",price:"",stock:""});}}
+                style={{padding:"8px 14px",border:"1px solid var(--bd)",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#475569"}}>Huỷ</button>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:10,color:"#767676",fontWeight:600,marginRight:4}}>Chọn nhanh emoji:</span>
+            {EMOJI_PRESETS.map(e=>(
+              <button key={e} onClick={()=>setForm(f=>({...f,emoji:e}))}
+                style={{width:30,height:30,fontSize:16,border:`1px solid ${form.emoji===e?"var(--or)":"#f0f0f0"}`,borderRadius:6,background:form.emoji===e?"#FFF4F0":"#fff",cursor:"pointer",padding:0}}>{e}</button>
+            ))}
+          </div>
+          <div style={{fontSize:10,color:"#999",marginTop:8}}>💡 Sau khi thêm, bấm <b>📖 Công thức</b> để nhập nguyên liệu và các bước.</div>
+        </div>
+      )}
+
+      <div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+        <thead>
+          <tr>{["","Tên","Danh mục","Giá","Tồn kho","Hiển thị","Thao tác"].map(h=>(
+            <th key={h} style={{padding:"8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px"}}>{h}</th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {products.map(p=>(
+            <tr key={p.id} style={{borderBottom:"1px solid #f8f8f8",opacity:p.on===false?.55:1}}>
+              <td style={{padding:"9px 8px",fontSize:22}}>{p.emoji}</td>
+              <td style={{padding:"9px 8px",color:"#212121",fontWeight:600}}>{p.name}</td>
+              <td style={{padding:"9px 8px",color:"#767676",fontSize:11}}>{CL[p.cat]}</td>
+              <td style={{padding:"9px 8px"}}>
+                {editPrice===p.id
+                  ? <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                      <input type="number" value={priceVal} onChange={e=>setPriceVal(+e.target.value)}
+                        onKeyDown={e=>e.key==="Enter"&&savePrice(p)}
+                        style={{width:90,padding:"4px 6px",border:"1px solid var(--or)",borderRadius:4,fontSize:11}} autoFocus/>
+                      <button onClick={()=>savePrice(p)} style={{fontSize:10,padding:"3px 7px",background:"var(--or)",color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>✓</button>
+                      <button onClick={()=>setEditPrice(null)} style={{fontSize:10,padding:"3px 7px",background:"#f5f5f5",border:"none",borderRadius:4,cursor:"pointer"}}>✕</button>
+                    </div>
+                  : <button onClick={()=>{setEditPrice(p.id);setPriceVal(p.price);}}
+                      style={{fontSize:12,fontWeight:700,color:"var(--or)",background:"none",border:"1px dashed transparent",cursor:"pointer",padding:"3px 6px",borderRadius:4}}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor="var(--or)"}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>{fmt(p.price)}</button>
+                }
+              </td>
+              <td style={{padding:"9px 8px"}}>
+                <input type="number" value={p.stock} onChange={e=>setStock(p,+e.target.value)}
+                  style={{width:70,padding:"4px 6px",border:"1px solid var(--bd)",borderRadius:4,fontSize:11}}/>
+              </td>
+              <td style={{padding:"9px 8px"}}><Tog on={p.on!==false} onChange={()=>togOn(p)} sm/></td>
+              <td style={{padding:"9px 8px"}}>
+                <div style={{display:"flex",gap:5}}>
+                  <button onClick={()=>setRecipe(p)}
+                    style={{fontSize:10,padding:"4px 9px",border:"1px solid var(--bd)",borderRadius:5,background:"#fff",cursor:"pointer",color:"#475569"}}>📖 Công thức</button>
+                  <button onClick={()=>remove(p)}
+                    style={{fontSize:10,padding:"4px 9px",border:"1px solid #fca5a5",borderRadius:5,background:"#fff",cursor:"pointer",color:"#b91c1c"}}>Xoá</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  );
+}
+
+function GeneralSettings({zones,setZones,shift,setShift,staff,products,toast}){
+  const updateZone=(i,k,v)=>setZones(zs=>zs.map((z,idx)=>idx===i?{...z,[k]:k==="fee"?+v:v}:z));
+  const addZone=()=>setZones(zs=>[...zs,{lb:"Khu vực mới",fee:10000}]);
+  const removeZone=i=>setZones(zs=>zs.filter((_,idx)=>idx!==i));
+
+  return (
+    <>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div className="card" style={{padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>🛵 Phí ship theo khu vực</div>
+            <button onClick={addZone} style={{fontSize:11,padding:"5px 10px",background:"var(--orl)",border:"none",borderRadius:6,color:"var(--or)",cursor:"pointer",fontWeight:700}}>+ Thêm zone</button>
+          </div>
+          {zones.map((z,i)=>(
+            <div key={i} style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
+              <input value={z.lb} onChange={e=>updateZone(i,"lb",e.target.value)}
+                style={{flex:1,padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+              <input type="number" value={z.fee} onChange={e=>updateZone(i,"fee",e.target.value)}
+                style={{width:110,padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,textAlign:"right"}}/>
+              <span style={{fontSize:11,color:"#767676"}}>đ</span>
+              <button onClick={()=>removeZone(i)} style={{padding:"4px 8px",border:"1px solid #fca5a5",borderRadius:4,background:"#fff",color:"#b91c1c",cursor:"pointer",fontSize:11}}>✕</button>
+            </div>
+          ))}
+        </div>
+
+        <div className="card" style={{padding:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>⏰ Ca làm việc</div>
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Tên ca</div>
+            <input value={shift.name} onChange={e=>setShift(s=>({...s,name:e.target.value}))}
+              style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Bắt đầu</div>
+              <input type="time" value={shift.start} onChange={e=>setShift(s=>({...s,start:e.target.value}))}
+                style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Kết thúc</div>
+              <input type="time" value={shift.end} onChange={e=>setShift(s=>({...s,end:e.target.value}))}
+                style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{padding:14,marginTop:14}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>ℹ️ Thông tin hệ thống</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,fontSize:12}}>
+          {[
+            ["Phiên bản","v3.1"],
+            ["Thành viên active",staff.filter(s=>s.active).length+" / "+staff.length],
+            ["Sản phẩm hiển thị",products.filter(p=>p.on!==false).length+" / "+products.length],
+            ["Lưu trữ","Supabase Cloud"],
+          ].map(([l,v])=>(
+            <div key={l} style={{padding:"10px 12px",background:"#fafafa",borderRadius:6}}>
+              <div style={{fontSize:10,color:"#999",fontWeight:700,marginBottom:3,letterSpacing:".3px"}}>{l.toUpperCase()}</div>
+              <div style={{fontSize:13,color:"#212121",fontWeight:700}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #f0f0f0",fontSize:11,color:"#767676",lineHeight:1.6}}>
+          💡 Dữ liệu được lưu trên <b>Supabase Cloud</b> với realtime sync. Mọi thay đổi đồng bộ tự động cho tất cả thiết bị đang mở app. Để xoá toàn bộ dữ liệu, vào Supabase Dashboard → SQL Editor và chạy <code>TRUNCATE TABLE orders, products, staff, zones RESTART IDENTITY;</code>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   ROOT APP
+══════════════════════════════════════════════════════════ */
+function App(){
+  const [screen,setScreen]   = useState("dashboard");
+  const [orders,_setOrders]  = useState([]);
+  const [products,_setProducts]= useState([]);
+  const [staff,_setStaff]    = useState([]);
+  const [zones,_setZones]    = useState([]);
+  const [shift,_setShift]    = useState({name:"Ca sáng",start:"07:45",end:"12:00"});
+  const [currentUser,setCurrentUser] = useState(null);
+  const [toasts,setToasts]   = useState([]);
+  const [time,setTime]       = useState(nowS());
+  const [loading,setLoading] = useState(true);
+  const [connStatus,setConnStatus] = useState("connecting");
+
+  // Refs để diff-wrapper có prev mới nhất (đồng bộ với state)
+  const ordersRef   = useRef([]);
+  const productsRef = useRef([]);
+  const staffRef    = useRef([]);
+  const zonesRef    = useRef([]);
+  const shiftRef    = useRef(shift);
+
+  const toast=useCallback((msg,type="info")=>{
+    const id=Date.now()+Math.random();
+    setToasts(t=>[...t,{id,msg,type}]);
+    setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3500);
+  },[]);
+  const dismiss=id=>setToasts(t=>t.filter(x=>x.id!==id));
+
+  // ── Diff wrapper: tự đồng bộ state local lên Supabase ──
+  const syncToDb = (prev, next, table, idKey, mapToDb) => {
+    const prevById = new Map(prev.map(x=>[x[idKey], x]));
+    const nextById = new Map(next.map(x=>[x[idKey], x]));
+    for (const x of next) {
+      const p = prevById.get(x[idKey]);
+      if (!p) {
+        sb.from(table).insert(mapToDb(x)).then(({error})=>{
+          if (error) toast(`Lỗi thêm ${table}: ${error.message}`,"error");
+        });
+      } else if (JSON.stringify(p) !== JSON.stringify(x)) {
+        sb.from(table).update(mapToDb(x)).eq(idKey, x[idKey]).then(({error})=>{
+          if (error) toast(`Lỗi cập nhật ${table}: ${error.message}`,"error");
+        });
+      }
+    }
+    for (const x of prev) {
+      if (!nextById.has(x[idKey])) {
+        sb.from(table).delete().eq(idKey, x[idKey]).then(({error})=>{
+          if (error) toast(`Lỗi xoá ${table}: ${error.message}`,"error");
+        });
+      }
+    }
+  };
+
+  const setOrders = useCallback(updater=>{
+    const prev = ordersRef.current;
+    const next = typeof updater==="function" ? updater(prev) : updater;
+    ordersRef.current = next;
+    _setOrders(next);
+    syncToDb(prev, next, "orders", "num", orderToDb);
+  },[]);
+  const setProducts = useCallback(updater=>{
+    const prev = productsRef.current;
+    const next = typeof updater==="function" ? updater(prev) : updater;
+    productsRef.current = next;
+    _setProducts(next);
+    syncToDb(prev, next, "products", "id", productToDb);
+  },[]);
+  const setStaff = useCallback(updater=>{
+    const prev = staffRef.current;
+    const next = typeof updater==="function" ? updater(prev) : updater;
+    staffRef.current = next;
+    _setStaff(next);
+    syncToDb(prev, next, "staff", "id", s=>s);
+  },[]);
+  const setZones = useCallback(updater=>{
+    const prev = zonesRef.current;
+    const next = typeof updater==="function" ? updater(prev) : updater;
+    // Gán id cho zone mới nếu chưa có
+    const nextWithIds = next.map((z,i)=>z.id?z:{...z,id:Math.max(0,...next.map(x=>x.id||0),...prev.map(x=>x.id||0))+1+i,sort:i});
+    zonesRef.current = nextWithIds;
+    _setZones(nextWithIds);
+    syncToDb(prev, nextWithIds, "zones", "id", z=>z);
+  },[]);
+  const setShift = useCallback(updater=>{
+    const prev = shiftRef.current;
+    const next = typeof updater==="function" ? updater(prev) : updater;
+    shiftRef.current = next;
+    _setShift(next);
+    sb.from("shift").update(shiftToDb(next)).eq("id",1).then(({error})=>{
+      if (error) toast(`Lỗi cập nhật ca: ${error.message}`,"error");
+    });
+  },[]);
+
+  // ── Initial fetch ──
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const [pR,sR,oR,zR,shR] = await Promise.all([
+          sb.from("products").select("*").order("id"),
+          sb.from("staff").select("*").order("id"),
+          sb.from("orders").select("*").order("num"),
+          sb.from("zones").select("*").order("sort"),
+          sb.from("shift").select("*").eq("id",1).maybeSingle(),
+        ]);
+        if (pR.error||sR.error||oR.error||zR.error){
+          toast("Lỗi tải dữ liệu. Kiểm tra Supabase / chạy schema.sql","error");
+          console.error(pR.error,sR.error,oR.error,zR.error);
+          setLoading(false); return;
+        }
+        const ps = (pR.data||[]).map(productFromDb);
+        const ss = sR.data||[];
+        const os = (oR.data||[]).map(orderFromDb);
+        const zs = zR.data||[];
+        const sh = shR.data ? shiftFromDb(shR.data) : {name:"Ca sáng",start:"07:45",end:"12:00"};
+        productsRef.current=ps; staffRef.current=ss; ordersRef.current=os; zonesRef.current=zs; shiftRef.current=sh;
+        _setProducts(ps); _setStaff(ss); _setOrders(os); _setZones(zs); _setShift(sh);
+        // Khôi phục currentUser từ localStorage (chỉ lưu id để chuyển vai nhanh)
+        const savedId = +(localStorage.getItem("clb_uid")||0);
+        const u = ss.find(x=>x.id===savedId) || ss.find(x=>x.role==="truc_don") || ss[0];
+        setCurrentUser(u||null);
+        setLoading(false);
+        toast("✅ Đã kết nối Supabase","success");
+      }catch(e){
+        console.error(e);
+        toast("Không kết nối được Supabase","error");
+        setLoading(false);
+      }
+    })();
+  },[]);
+
+  // Lưu id user hiện tại (chỉ id, không phải toàn bộ object)
+  useEffect(()=>{ if (currentUser) localStorage.setItem("clb_uid",currentUser.id); },[currentUser]);
+
+  // ── Realtime subscriptions ──
+  useEffect(()=>{
+    const mergeProduct = r => {
+      const p = productFromDb(r);
+      _setProducts(ps=>{
+        const ex = ps.find(x=>x.id===p.id);
+        if (ex && JSON.stringify(ex)===JSON.stringify(p)) return ps;
+        const next = ex ? ps.map(x=>x.id===p.id?p:x) : [...ps,p].sort((a,b)=>a.id-b.id);
+        productsRef.current = next;
+        return next;
+      });
+    };
+    const mergeStaff = r => {
+      _setStaff(ss=>{
+        const ex = ss.find(x=>x.id===r.id);
+        if (ex && JSON.stringify(ex)===JSON.stringify(r)) return ss;
+        const next = ex ? ss.map(x=>x.id===r.id?r:x) : [...ss,r].sort((a,b)=>a.id-b.id);
+        staffRef.current = next;
+        return next;
+      });
+    };
+    const mergeOrder = r => {
+      const o = orderFromDb(r);
+      _setOrders(os=>{
+        const ex = os.find(x=>x.num===o.num);
+        if (ex && JSON.stringify(ex)===JSON.stringify(o)) return os;
+        const next = ex ? os.map(x=>x.num===o.num?o:x) : [...os,o].sort((a,b)=>a.num-b.num);
+        ordersRef.current = next;
+        return next;
+      });
+    };
+    const mergeZone = r => {
+      _setZones(zs=>{
+        const ex = zs.find(x=>x.id===r.id);
+        if (ex && JSON.stringify(ex)===JSON.stringify(r)) return zs;
+        const next = ex ? zs.map(x=>x.id===r.id?r:x) : [...zs,r].sort((a,b)=>(a.sort||0)-(b.sort||0));
+        zonesRef.current = next;
+        return next;
+      });
+    };
+    const mergeShift = r => {
+      const s = shiftFromDb(r);
+      _setShift(prev=>{
+        if (JSON.stringify(prev)===JSON.stringify(s)) return prev;
+        shiftRef.current = s;
+        return s;
+      });
+    };
+    const removeFrom = (setter, refObj, idKey, val) => {
+      setter(arr=>{
+        if (!arr.find(x=>x[idKey]===val)) return arr;
+        const next = arr.filter(x=>x[idKey]!==val);
+        refObj.current = next;
+        return next;
+      });
+    };
+
+    const ch = sb.channel("clb-realtime")
+      .on("postgres_changes",{event:"*",schema:"public",table:"products"},p=>{
+        if (p.eventType==="DELETE") removeFrom(_setProducts,productsRef,"id",p.old.id);
+        else mergeProduct(p.new);
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"staff"},p=>{
+        if (p.eventType==="DELETE") removeFrom(_setStaff,staffRef,"id",p.old.id);
+        else mergeStaff(p.new);
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"orders"},p=>{
+        if (p.eventType==="DELETE") removeFrom(_setOrders,ordersRef,"num",p.old.num);
+        else mergeOrder(p.new);
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"zones"},p=>{
+        if (p.eventType==="DELETE") removeFrom(_setZones,zonesRef,"id",p.old.id);
+        else mergeZone(p.new);
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"shift"},p=>{
+        if (p.eventType!=="DELETE" && p.new) mergeShift(p.new);
+      })
+      .subscribe(status=>{
+        if (status==="SUBSCRIBED") setConnStatus("live");
+        else if (status==="CHANNEL_ERROR"||status==="CLOSED") setConnStatus("offline");
+      });
+    return ()=>{ sb.removeChannel(ch); };
+  },[]);
+
+  useEffect(()=>{const t=setInterval(()=>setTime(nowS()),20000);return()=>clearInterval(t);},[]);
+
+  const SCREENS={
+    dashboard:{title:"Tổng quan",       sub:`${shift.name} · ${shift.start} – ${shift.end} · ${staff.filter(s=>s.active).length} thành viên đang trực`,
+               comp:<Dashboard orders={orders} staff={staff}/>},
+    order:    {title:"Trực đơn",         sub:"Nhận & tạo đơn hàng · Tách KPI người sale",
+               comp:<OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} toast={toast}/>},
+    kitchen:  {title:"Pha chế (KDS)",    sub:"Kitchen Display System · Realtime",
+               comp:<KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} toast={toast}/>},
+    shipper:  {title:"Giao hàng",        sub:"Quản lý shipper & vận chuyển",
+               comp:<ShipperScreen orders={orders} setOrders={setOrders} staff={staff} toast={toast}/>},
+    staff:    {title:"Nhân sự & KPI",    sub:"Phân công · Theo dõi KPI · Bảng xếp hạng",
+               comp:<StaffScreen orders={orders} staff={staff}/>},
+    report:   {title:"Báo cáo & Log",    sub:"Tổng kết cuối ca · Xuất dữ liệu CSV",
+               comp:<ReportScreen orders={orders} staff={staff} products={products} shift={shift} toast={toast}/>},
+    settings: {title:"Cài đặt",          sub:"Quản lý nhân sự, sản phẩm, cấu hình chung",
+               comp:<SettingsScreen products={products} setProducts={setProducts} staff={staff} setStaff={setStaff} zones={zones} setZones={setZones} shift={shift} setShift={setShift} currentUser={currentUser} toast={toast}/>},
+  };
+  const cur=SCREENS[screen];
+
+  if (loading) {
+    return (
+      <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+        <div style={{width:48,height:48,border:"4px solid #FFE4D8",borderTop:"4px solid var(--or)",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+        <div style={{fontSize:13,color:"#767676"}}>Đang kết nối Supabase...</div>
+      </div>
+    );
+  }
+
+  if (!currentUser || staff.length===0) {
+    return (
+      <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+        <div style={{maxWidth:480,textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
+          <div style={{fontSize:18,fontWeight:700,color:"#212121",marginBottom:8}}>Chưa có dữ liệu</div>
+          <div style={{fontSize:13,color:"#767676",lineHeight:1.6,marginBottom:14}}>
+            Có vẻ Supabase chưa được khởi tạo. Hãy vào <b>Supabase Dashboard → SQL Editor</b>, paste toàn bộ file <code style={{background:"#fafafa",padding:"2px 6px",borderRadius:4,color:"var(--or)"}}>supabase-schema.sql</code> và chạy. Sau đó refresh trang.
+          </div>
+          <button onClick={()=>location.reload()} className="btn-pri" style={{padding:"10px 20px",borderRadius:6,fontSize:13}}>Tải lại trang</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{display:"flex",height:"100vh",overflow:"hidden",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
+      <Sidebar screen={screen} setScreen={setScreen} orders={orders} shift={shift}/>
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",background:"var(--bg)"}}>
+        <TopBar title={cur.title} sub={cur.sub} time={time} currentUser={currentUser} staff={staff} setCurrentUser={setCurrentUser} connStatus={connStatus}/>
+        <div style={{flex:1,overflow:"hidden",display:"flex",minHeight:0}}>{cur.comp}</div>
+      </div>
+      <Toast list={toasts} dismiss={dismiss}/>
+      <HelpPopup/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
