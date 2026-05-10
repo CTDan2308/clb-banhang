@@ -65,27 +65,36 @@ CREATE TABLE IF NOT EXISTS shift (
   end_at     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS categories (
+  key        TEXT PRIMARY KEY,
+  label      TEXT NOT NULL,
+  sort       INT NOT NULL DEFAULT 0
+);
+
 -- ═══════════════════════════════════════
 -- 2. ROW LEVEL SECURITY (cho phép anon đọc/ghi - phù hợp demo nội bộ)
 -- ═══════════════════════════════════════
 
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE staff    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orders   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE zones    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shift    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE zones      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shift      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "open_all" ON products;
 DROP POLICY IF EXISTS "open_all" ON staff;
 DROP POLICY IF EXISTS "open_all" ON orders;
 DROP POLICY IF EXISTS "open_all" ON zones;
 DROP POLICY IF EXISTS "open_all" ON shift;
+DROP POLICY IF EXISTS "open_all" ON categories;
 
-CREATE POLICY "open_all" ON products FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON staff    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON orders   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON zones    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON shift    FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON products   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON staff      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON orders     FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON zones      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON shift      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON categories FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- ═══════════════════════════════════════
 -- 3. REALTIME (cho phép subscribe thay đổi)
@@ -105,6 +114,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE shift;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE categories;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ═══════════════════════════════════════
@@ -160,3 +172,12 @@ END $$;
 
 INSERT INTO shift (id,name,start_at,end_at) VALUES (1,'Ca sáng','07:45','12:00')
 ON CONFLICT (id) DO NOTHING;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM categories) THEN
+    INSERT INTO categories (key,label,sort) VALUES
+      ('pha_che','☕ Đồ pha chế', 0),
+      ('san_co', '📦 Đồ sẵn có', 1),
+      ('kho',    '⚡ Dùng ngay', 2);
+  END IF;
+END $$;

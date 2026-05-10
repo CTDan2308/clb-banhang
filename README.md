@@ -1,22 +1,28 @@
-# 🛒 CLB Quản Lý Bán Hàng v3.1
+# 🛒 CLB Quản Lý Bán Hàng v1.0
 
 > Hệ thống quản lý bán hàng nội bộ cho **Câu lạc bộ Sinh viên bán hàng Gây quỹ** — tạo đơn, pha chế, giao hàng, theo dõi KPI và báo cáo doanh thu trong từng ca.
 
 **Single-page app** chạy trên trình duyệt + **Supabase Cloud** làm database/realtime.  
-Nhiều người cùng dùng sẽ thấy đơn/trạng thái cập nhật **tức thì** giữa các thiết bị.
+Nhiều người cùng dùng sẽ thấy đơn/trạng thái cập nhật **tức thì** giữa các thiết bị.  
+Có **PIN login** + **role-based UI** + **responsive mobile**.
+
+📋 Lịch sử thay đổi: xem [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
 ## ✨ Tính năng
 
+- 🔐 **PIN Login** — mỗi thành viên 1 mã PIN 4 số riêng, map đến role tương ứng
+- 🎯 **Role-based UI** — mỗi vai trò chỉ thấy màn liên quan, không phân tán
 - 📋 **Tạo đơn nhanh** — tách rõ *Người tạo đơn* và *Người nhận KPI*
 - ☕ **KDS (Kitchen Display)** — kanban 3 cột Mới / Đang pha / Sẵn sàng, có công thức từng món
 - 🛵 **Quản lý giao hàng** — phân công shipper, theo dõi trạng thái
 - 🎯 **KPI cá nhân** — bảng xếp hạng theo doanh thu KPI
 - 📊 **Báo cáo cuối ca** — xuất CSV (Excel mở được, có BOM UTF-8)
+- 🗂️ **Categories chỉnh sửa được** — tự thêm/xoá/đổi tên danh mục sản phẩm
 - ⚙️ **Cài đặt linh hoạt** — thêm/sửa/xoá nhân sự, sản phẩm, công thức, phí ship
 - ☁️ **Realtime sync qua Supabase** — đơn tạo ở máy A hiện ngay ở máy B/KDS/Shipper
-- 👤 **User switcher** — chuyển vai nhanh không cần PIN (demo)
+- 📱 **Responsive mobile** — sidebar drawer, panels tự stack, dùng được trên điện thoại
 
 ---
 
@@ -37,7 +43,7 @@ Nhiều người cùng dùng sẽ thấy đơn/trạng thái cập nhật **tứ
 └─────────────────────────────┘
 ```
 
-5 bảng: `products`, `staff`, `orders`, `zones`, `shift` (xem `supabase-schema.sql`).
+6 bảng: `products`, `staff`, `orders`, `zones`, `shift`, `categories` (xem `supabase-schema.sql`).
 
 ---
 
@@ -181,14 +187,30 @@ Chỉ cần đổi `SUPABASE_URL` và `SUPABASE_KEY` ở đầu `index.html`, co
 
 ---
 
+## 🔑 PIN mặc định (sau khi seed)
+
+| PIN  | Vai trò    | Tên           |
+|------|------------|---------------|
+| 1111 | Trưởng ca  | Hoàng Khánh   |
+| 2222 | Trực đơn   | Nguyễn Hà     |
+| 3333 | Pha chế    | Trần Minh     |
+| 4444 | Pha chế    | Lê Ngọc       |
+| 5555 | Shipper    | Phạm Tuấn     |
+| 6666 | Shipper    | Vũ Linh       |
+
+> ⚠️ Đổi ngay PIN sau khi triển khai thật. Có thể đổi trong **Cài đặt → Nhân sự** (cần đăng nhập bằng admin/trưởng ca).
+
+---
+
 ## 🛣️ Roadmap
 
 - [x] **v3.0** — Single-file React + localStorage
 - [x] **v3.1** — Tích hợp Supabase + realtime sync
-- [ ] **v3.2** — PIN login thật (Supabase Auth + RLS chặt hơn)
-- [ ] **v3.3** — VietQR API tự sinh QR theo từng đơn
-- [ ] **v3.4** — Multi-shift, lưu lịch sử nhiều ca
-- [ ] **v4.0** — Chuyển sang Next.js + Vercel cho UX tốt hơn
+- [x] **v1.0** — Production: PIN login, role-based UI, categories editable, responsive
+- [ ] **v1.1** — VietQR API tự sinh QR theo từng đơn
+- [ ] **v1.2** — Multi-shift, lưu lịch sử nhiều ca
+- [ ] **v1.3** — Supabase Auth (replace PIN với real auth + RLS chặt)
+- [ ] **v2.0** — Chuyển sang Next.js + Vercel cho UX tốt hơn
 
 ---
 
