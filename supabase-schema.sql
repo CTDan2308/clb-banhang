@@ -58,11 +58,29 @@ CREATE TABLE IF NOT EXISTS zones (
   sort       INT NOT NULL DEFAULT 0
 );
 
+-- Singleton "shift" (legacy, giữ để backward compat — không dùng nữa)
 CREATE TABLE IF NOT EXISTS shift (
   id         INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   name       TEXT,
   start_at   TEXT,
   end_at     TEXT
+);
+
+-- Multi-shift v1.1: nhiều ca trong ngày
+CREATE TABLE IF NOT EXISTS shifts (
+  id         SMALLINT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  start_at   TEXT NOT NULL,
+  end_at     TEXT NOT NULL,
+  sort       SMALLINT NOT NULL DEFAULT 0
+);
+
+-- Phân công role cho từng staff trong từng ca (override staff.role mặc định)
+CREATE TABLE IF NOT EXISTS shift_assignments (
+  shift_id   SMALLINT NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+  staff_id   BIGINT   NOT NULL REFERENCES staff(id)  ON DELETE CASCADE,
+  role       TEXT     NOT NULL,
+  PRIMARY KEY (shift_id, staff_id)
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -75,12 +93,14 @@ CREATE TABLE IF NOT EXISTS categories (
 -- 2. ROW LEVEL SECURITY (cho phép anon đọc/ghi - phù hợp demo nội bộ)
 -- ═══════════════════════════════════════
 
-ALTER TABLE products   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE staff      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orders     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE zones      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shift      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE zones             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shift             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shifts            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shift_assignments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "open_all" ON products;
 DROP POLICY IF EXISTS "open_all" ON staff;
@@ -88,13 +108,17 @@ DROP POLICY IF EXISTS "open_all" ON orders;
 DROP POLICY IF EXISTS "open_all" ON zones;
 DROP POLICY IF EXISTS "open_all" ON shift;
 DROP POLICY IF EXISTS "open_all" ON categories;
+DROP POLICY IF EXISTS "open_all" ON shifts;
+DROP POLICY IF EXISTS "open_all" ON shift_assignments;
 
-CREATE POLICY "open_all" ON products   FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON staff      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON orders     FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON zones      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON shift      FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "open_all" ON categories FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON products          FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON staff             FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON orders            FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON zones             FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON shift             FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON categories        FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON shifts            FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "open_all" ON shift_assignments FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- ═══════════════════════════════════════
 -- 3. REALTIME (cho phép subscribe thay đổi)
@@ -117,6 +141,12 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE categories;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE shifts;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE shift_assignments;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ═══════════════════════════════════════
@@ -179,5 +209,22 @@ DO $$ BEGIN
       ('pha_che','☕ Đồ pha chế', 0),
       ('san_co', '📦 Đồ sẵn có', 1),
       ('kho',    '⚡ Dùng ngay', 2);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM shifts) THEN
+    INSERT INTO shifts (id,name,start_at,end_at,sort) VALUES
+      (1,'Ca sáng',  '07:00','12:00', 0),
+      (2,'Ca trưa',  '12:00','17:00', 1),
+      (3,'Ca chiều', '17:00','22:00', 2);
+  END IF;
+END $$;
+
+-- Seed assignments: tất cả staff đều làm role mặc định của họ trong Ca sáng
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM shift_assignments) THEN
+    INSERT INTO shift_assignments (shift_id, staff_id, role)
+    SELECT 1, id, role FROM staff WHERE active = true;
   END IF;
 END $$;

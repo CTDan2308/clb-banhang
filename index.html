@@ -176,8 +176,35 @@ const ROLE_PERMS = {
   pha_che:   ["kitchen"],
   shipper:   ["shipper"],
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
+  off:       [],
 };
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
+
+/* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
+const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
+const getCurrentShift = (shifts) => {
+  if (!shifts || !shifts.length) return null;
+  const d = new Date();
+  const now = d.getHours()*60 + d.getMinutes();
+  for (const s of shifts) {
+    const start = hmToMin(s.start_at);
+    const end   = hmToMin(s.end_at);
+    if (end > start) {
+      if (now >= start && now < end) return s;
+    } else {
+      if (now >= start || now < end) return s;
+    }
+  }
+  return null;
+};
+/* Role thực tế của user trong ca hiện tại */
+const getEffectiveRole = (currentShift, shiftAssignments, user) => {
+  if (!user) return null;
+  if (user.role === "admin") return "admin";
+  if (!currentShift) return user.role;
+  const a = shiftAssignments.find(x => x.shift_id===currentShift.id && x.staff_id===user.id);
+  return a ? a.role : "off";
+};
 
 /* ══════════════════════════════════════════════════════════
    UTILS
@@ -585,7 +612,7 @@ function HelpPopup(){
 /* ══════════════════════════════════════════════════════════
    SIDEBAR + TOPBAR
 ══════════════════════════════════════════════════════════ */
-function Sidebar({screen,setScreen,orders,shift,allowed,sbOpen,onClose,onLogout,currentUser}){
+function Sidebar({screen,setScreen,orders,currentShift,allowed,sbOpen,onClose,onLogout,currentUser,effectiveRole}){
   const pending  = orders.filter(o=>!["hoan_thanh","huy"].includes(o.st)).length;
   const inKitchen= orders.filter(o=>["moi","pha_che"].includes(o.st)).length;
   const inShip   = orders.filter(o=>o.type==="ship"&&["san_sang","dang_giao"].includes(o.st)).length;
@@ -599,7 +626,9 @@ function Sidebar({screen,setScreen,orders,shift,allowed,sbOpen,onClose,onLogout,
     {k:"settings", icon:"ti-settings",        label:"Cài đặt"},
   ];
   const nav = navAll.filter(n=>allowed.includes(n.k));
-  const [tc,bg] = RC[currentUser.role]||["#475569","#f5f5f5"];
+  const er = effectiveRole || currentUser.role;
+  const [tc,bg] = RC[er]||["#475569","#f5f5f5"];
+  const roleSwitched = er !== currentUser.role && er !== "admin";
   return (
     <div className={"sidebar "+(sbOpen?"open":"")} style={{background:"#fff",borderRight:"1px solid var(--bd)",display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{padding:"16px 16px 12px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -616,9 +645,18 @@ function Sidebar({screen,setScreen,orders,shift,allowed,sbOpen,onClose,onLogout,
         <div style={{width:34,height:34,borderRadius:"50%",background:"#fff",color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{inits(currentUser.name)}</div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:12.5,color:"#212121",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{currentUser.name}</div>
-          <div style={{fontSize:10,color:tc,fontWeight:700}}>{RL[currentUser.role]}</div>
+          <div style={{fontSize:10,color:tc,fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
+            <span>{RL[er]||er}</span>
+            {roleSwitched && <span title={`Mặc định: ${RL[currentUser.role]}`} style={{fontSize:9,padding:"1px 5px",background:"#fff",borderRadius:6,color:"var(--or)",fontWeight:800}}>theo ca</span>}
+          </div>
         </div>
       </div>
+      {currentShift && (
+        <div style={{padding:"7px 14px",background:"#FFF8F4",borderBottom:"1px solid #f0f0f0",fontSize:10.5,color:"#92400e",display:"flex",alignItems:"center",gap:6}}>
+          <i className="ti ti-clock-hour-4" style={{fontSize:13,color:"var(--or)"}}/>
+          <span><b>{currentShift.name}</b> · {currentShift.start_at}–{currentShift.end_at}</span>
+        </div>
+      )}
       <nav style={{flex:1,padding:"6px 0",overflowY:"auto"}}>
         {nav.map(n=>{
           const ac=screen===n.k;
@@ -632,8 +670,7 @@ function Sidebar({screen,setScreen,orders,shift,allowed,sbOpen,onClose,onLogout,
           );
         })}
       </nav>
-      <div style={{padding:"8px 10px",borderTop:"1px solid #f0f0f0",display:"flex",flexDirection:"column",gap:6}}>
-        <div style={{fontSize:10,color:"#999",padding:"0 6px"}}>{shift.name} · {shift.start}–{shift.end}</div>
+      <div style={{padding:"8px 10px",borderTop:"1px solid #f0f0f0"}}>
         <button onClick={onLogout} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"9px 12px",border:"1px solid #f0f0f0",borderRadius:6,background:"#fff",cursor:"pointer",color:"#b91c1c",fontSize:12,fontWeight:600}}>
           <i className="ti ti-logout" style={{fontSize:15}}/>Đăng xuất
         </button>
@@ -642,8 +679,9 @@ function Sidebar({screen,setScreen,orders,shift,allowed,sbOpen,onClose,onLogout,
   );
 }
 
-function TopBar({title,sub,time,currentUser,connStatus,onLogout,onMenu}){
-  const [tc,bg] = RC[currentUser.role]||["#475569","#f5f5f5"];
+function TopBar({title,sub,time,currentUser,connStatus,onLogout,onMenu,effectiveRole,currentShift,notifEnabled,onToggleNotif}){
+  const er = effectiveRole || currentUser.role;
+  const [tc,bg] = RC[er]||["#475569","#f5f5f5"];
   const conn = {
     live:    {color:"#22c55e",text:"Realtime",pulse:true},
     connecting:{color:"#f59e0b",text:"Đang kết nối",pulse:true},
@@ -669,11 +707,15 @@ function TopBar({title,sub,time,currentUser,connStatus,onLogout,onMenu}){
           <div style={{width:7,height:7,borderRadius:"50%",background:conn.color,animation:conn.pulse?"pulse 2s infinite":"none"}}/>
           <span className="hide-mobile" style={{fontSize:10,color:conn.color,fontWeight:700}}>{conn.text}</span>
         </div>
+        <button onClick={onToggleNotif} title={notifEnabled?"Tắt thông báo":"Bật thông báo"}
+          style={{width:34,height:34,borderRadius:"50%",border:"1px solid var(--bd)",background:notifEnabled?"#FFF4F0":"#fff",color:notifEnabled?"var(--or)":"#999",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <i className={`ti ${notifEnabled?"ti-bell-ringing":"ti-bell-off"}`}/>
+        </button>
         <div className="hide-mobile" style={{display:"flex",alignItems:"center",gap:7,padding:"4px 10px 4px 4px",background:"#fff",border:"1px solid var(--bd)",borderRadius:24}}>
           <div style={{width:28,height:28,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{inits(currentUser.name)}</div>
           <div style={{textAlign:"left"}}>
             <div style={{fontSize:12,fontWeight:700,color:"#212121",lineHeight:1.1}}>{currentUser.name}</div>
-            <div style={{fontSize:9.5,color:tc,fontWeight:700,lineHeight:1.2}}>{RL[currentUser.role]}</div>
+            <div style={{fontSize:9.5,color:tc,fontWeight:700,lineHeight:1.2}}>{RL[er]||er}{currentShift?` · ${currentShift.name}`:""}</div>
           </div>
         </div>
       </div>
@@ -1455,7 +1497,7 @@ function ReportScreen({orders,staff,products,shift,toast}){
 /* ══════════════════════════════════════════════════════════
    SETTINGS SCREEN
 ══════════════════════════════════════════════════════════ */
-function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shift,setShift,categories,setCategories,currentUser,toast}){
+function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shift,setShift,categories,setCategories,shifts,setShifts,shiftAssignments,upsertAssignment,deleteAssignment,currentUser,toast}){
   const [tab,setTab] = useState("staff");
   const [recipe,setRecipe] = useState(null);
 
@@ -1463,6 +1505,7 @@ function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shif
     {k:"staff", l:"Nhân sự & Tài khoản",ic:"ti-users"},
     {k:"prod",  l:"Sản phẩm & Tồn kho", ic:"ti-package"},
     {k:"cat",   l:"Danh mục",            ic:"ti-category"},
+    {k:"shift", l:"Lịch ca & Phân công", ic:"ti-calendar-time"},
     {k:"gen",   l:"Cài đặt chung",      ic:"ti-settings-2"},
   ];
 
@@ -1480,11 +1523,168 @@ function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shif
       {tab==="staff"&&<StaffSettings staff={staff} setStaff={setStaff} currentUser={currentUser} toast={toast}/>}
       {tab==="prod" &&<ProductSettings products={products} setProducts={setProducts} categories={categories} setRecipe={setRecipe} toast={toast}/>}
       {tab==="cat"  &&<CategorySettings categories={categories} setCategories={setCategories} products={products} toast={toast}/>}
+      {tab==="shift"&&<ShiftSettings shifts={shifts} setShifts={setShifts} shiftAssignments={shiftAssignments} upsertAssignment={upsertAssignment} deleteAssignment={deleteAssignment} staff={staff} toast={toast}/>}
       {tab==="gen"  &&<GeneralSettings zones={zones} setZones={setZones} shift={shift} setShift={setShift} staff={staff} products={products} toast={toast}/>}
 
       {recipe&&<RecipeModal product={recipe} onClose={()=>setRecipe(null)}
         onSave={updated=>setProducts(ps=>ps.map(p=>p.id===recipe.id?{...p,recipe:updated}:p))} toast={toast}/>}
     </div>
+  );
+}
+
+function ShiftSettings({shifts,setShifts,shiftAssignments,upsertAssignment,deleteAssignment,staff,toast}){
+  const [addShift,setAddShift] = useState(false);
+  const [sf,setSf] = useState({name:"",start_at:"",end_at:""});
+
+  const submitShift = () => {
+    if (!sf.name.trim()) { toast("Nhập tên ca","warn"); return; }
+    if (!/^\d{2}:\d{2}$/.test(sf.start_at) || !/^\d{2}:\d{2}$/.test(sf.end_at)) { toast("Giờ phải dạng HH:MM","warn"); return; }
+    const id = Math.max(0,...shifts.map(s=>s.id||0))+1;
+    const sort = shifts.length;
+    setShifts(prev=>[...prev,{id,name:sf.name.trim(),start_at:sf.start_at,end_at:sf.end_at,sort}]);
+    setSf({name:"",start_at:"",end_at:""}); setAddShift(false);
+    toast("Đã thêm ca","success");
+  };
+  const removeShift = sh => {
+    if (!confirm(`Xoá ca "${sh.name}"? Sẽ xoá luôn phân công của ca này.`)) return;
+    setShifts(prev=>prev.filter(x=>x.id!==sh.id));
+    toast(`Đã xoá ca ${sh.name}`,"info");
+  };
+  const updateShift = (sh,k,v) => setShifts(prev=>prev.map(x=>x.id===sh.id?{...x,[k]:v}:x));
+
+  const getRole = (shift_id, staff_id) => {
+    const a = shiftAssignments.find(x=>x.shift_id===shift_id && x.staff_id===staff_id);
+    return a ? a.role : "off";
+  };
+
+  const ROLE_OPTS = [
+    {v:"off",       l:"😴 Nghỉ",         c:"#999",       bg:"#fafafa"},
+    {v:"truong_ca", l:"Trưởng ca",       c:"#1D4ED8",    bg:"#EFF6FF"},
+    {v:"truc_don",  l:"Trực đơn",        c:"#EE4D2D",    bg:"#FFF4F0"},
+    {v:"pha_che",   l:"Pha chế",         c:"#D97706",    bg:"#FFFBEB"},
+    {v:"shipper",   l:"Shipper",         c:"#16A34A",    bg:"#F0FDF4"},
+    {v:"admin",     l:"Admin",           c:"#7C3AED",    bg:"#F5F3FF"},
+  ];
+
+  return (
+    <>
+      <div style={{background:"#FFF4F0",border:"1px solid #FFD4C2",borderRadius:8,padding:"11px 14px",marginBottom:14,fontSize:11.5,color:"#92400e",lineHeight:1.55,display:"flex",gap:8}}>
+        <i className="ti ti-info-circle" style={{fontSize:16,color:"var(--or)",flexShrink:0,marginTop:1}}/>
+        <span><b>Lịch ca:</b> Chia ngày thành nhiều ca, mỗi nhân sự có thể có role khác nhau theo từng ca. Hệ thống tự đổi vai trò khi đến giờ ca mới. Chọn <b>Nghỉ</b> nếu thành viên không làm ca đó.</span>
+      </div>
+
+      {/* Danh sách ca */}
+      <div className="card" style={{padding:14,marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>Danh sách ca ({shifts.length})</div>
+          {!addShift&&<button onClick={()=>setAddShift(true)} className="btn-pri"
+            style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:6,fontSize:12}}>
+            <i className="ti ti-plus" style={{fontSize:14}}/>Thêm ca
+          </button>}
+        </div>
+
+        {addShift&&(
+          <div style={{background:"#fafafa",border:"1px solid #f0f0f0",borderRadius:8,padding:14,marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#212121",marginBottom:10}}>Thêm ca mới</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px auto",gap:8,alignItems:"end"}}>
+              <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Tên ca</div>
+                <input value={sf.name} onChange={e=>setSf(f=>({...f,name:e.target.value}))} placeholder="Ca tối"
+                  style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Bắt đầu</div>
+                <input type="time" value={sf.start_at} onChange={e=>setSf(f=>({...f,start_at:e.target.value}))}
+                  style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Kết thúc</div>
+                <input type="time" value={sf.end_at} onChange={e=>setSf(f=>({...f,end_at:e.target.value}))}
+                  style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={submitShift} className="btn-pri" style={{padding:"8px 14px",borderRadius:6,fontSize:12}}>Thêm</button>
+                <button onClick={()=>setAddShift(false)}
+                  style={{padding:"8px 14px",border:"1px solid var(--bd)",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#475569"}}>Huỷ</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          {[...shifts].sort((a,b)=>(a.sort||0)-(b.sort||0)).map(sh=>(
+            <div key={sh.id} style={{border:"1px solid var(--bd)",borderRadius:8,padding:"10px 12px",minWidth:180,display:"flex",flexDirection:"column",gap:6}}>
+              <input value={sh.name} onChange={e=>updateShift(sh,"name",e.target.value)}
+                style={{fontSize:13,fontWeight:700,color:"#212121",border:"none",background:"transparent",padding:0,outline:"none"}}/>
+              <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                <input type="time" value={sh.start_at} onChange={e=>updateShift(sh,"start_at",e.target.value)}
+                  style={{flex:1,padding:"5px 8px",border:"1px solid var(--bd)",borderRadius:5,fontSize:11}}/>
+                <span style={{color:"#999",fontSize:10}}>→</span>
+                <input type="time" value={sh.end_at} onChange={e=>updateShift(sh,"end_at",e.target.value)}
+                  style={{flex:1,padding:"5px 8px",border:"1px solid var(--bd)",borderRadius:5,fontSize:11}}/>
+              </div>
+              <button onClick={()=>removeShift(sh)}
+                style={{fontSize:10,padding:"4px 0",border:"1px solid #fca5a5",borderRadius:5,background:"#fff",cursor:"pointer",color:"#b91c1c",fontWeight:600}}>Xoá ca</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Ma trận phân công */}
+      <div className="card" style={{padding:14}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>Phân công role theo ca</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5,minWidth:600}}>
+            <thead>
+              <tr>
+                <th style={{padding:"8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px",position:"sticky",left:0,background:"#fff",zIndex:1}}>Nhân sự</th>
+                {[...shifts].sort((a,b)=>(a.sort||0)-(b.sort||0)).map(sh=>(
+                  <th key={sh.id} style={{padding:"8px",textAlign:"center",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",minWidth:140}}>
+                    {sh.name}<br/><span style={{fontWeight:400,color:"#ccc"}}>{sh.start_at}–{sh.end_at}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {staff.filter(s=>s.active).map(s=>{
+                const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+                return (
+                  <tr key={s.id} style={{borderBottom:"1px solid #f8f8f8"}}>
+                    <td style={{padding:"9px 8px",position:"sticky",left:0,background:"#fff",zIndex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{width:28,height:28,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{inits(s.name)}</div>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700,color:"#212121"}}>{s.name}</div>
+                          <div style={{fontSize:9.5,color:tc,fontWeight:600}}>Mặc định: {RL[s.role]}</div>
+                        </div>
+                      </div>
+                    </td>
+                    {[...shifts].sort((a,b)=>(a.sort||0)-(b.sort||0)).map(sh=>{
+                      const role = getRole(sh.id, s.id);
+                      const opt = ROLE_OPTS.find(o=>o.v===role) || ROLE_OPTS[0];
+                      return (
+                        <td key={sh.id} style={{padding:"9px 8px",textAlign:"center"}}>
+                          <select value={role} onChange={e=>upsertAssignment(sh.id,s.id,e.target.value)}
+                            style={{fontSize:11,padding:"5px 8px",border:`1.5px solid ${opt.bg==="#fafafa"?"#e0e0e0":opt.c+"40"}`,borderRadius:5,background:opt.bg,color:opt.c,fontWeight:700,cursor:"pointer",minWidth:115}}>
+                            {ROLE_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                          </select>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              {staff.filter(s=>s.active).length===0 && (
+                <tr><td colSpan={shifts.length+1} style={{padding:"20px",textAlign:"center",color:"#999",fontSize:12}}>Chưa có nhân sự đang hoạt động</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div style={{marginTop:10,fontSize:10,color:"#767676",lineHeight:1.6}}>
+          💡 Mỗi thay đổi tự lưu lên cloud. Khi đến giờ ca mới, role của user sẽ tự cập nhật trên mọi thiết bị.
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -1960,7 +2160,11 @@ function App(){
   const [zones,_setZones]    = useState([]);
   const [shift,_setShift]    = useState({name:"Ca sáng",start:"07:45",end:"12:00"});
   const [categories,_setCategories] = useState([]);
+  const [shifts,_setShifts]  = useState([]);
+  const [shiftAssignments,_setShiftAssignments] = useState([]);
   const [currentUser,setCurrentUser] = useState(null);
+  const [notifEnabled,setNotifEnabled] = useState(()=>localStorage.getItem("clb_notif")==="1");
+  const [tickMin,setTickMin] = useState(0); // re-render mỗi phút để cập nhật ca hiện tại
   const [toasts,setToasts]   = useState([]);
   const [time,setTime]       = useState(nowS());
   const [loading,setLoading] = useState(true);
@@ -1974,6 +2178,9 @@ function App(){
   const zonesRef      = useRef([]);
   const shiftRef      = useRef(shift);
   const categoriesRef = useRef([]);
+  const shiftsRef     = useRef([]);
+  const effectiveRoleRef = useRef("off");
+  const notifEnabledRef  = useRef(notifEnabled);
 
   const toast=useCallback((msg,type="info")=>{
     const id=Date.now()+Math.random();
@@ -2053,22 +2260,47 @@ function App(){
     _setCategories(next);
     syncToDb(prev, next, "categories", "key", c=>c);
   },[]);
+  const setShifts = useCallback(updater=>{
+    const prev = shiftsRef.current;
+    const next = typeof updater==="function" ? updater(prev) : updater;
+    shiftsRef.current = next;
+    _setShifts(next);
+    syncToDb(prev, next, "shifts", "id", s=>s);
+  },[]);
+  /* Composite key — không dùng diff wrapper, gọi DB trực tiếp + optimistic update */
+  const upsertAssignment = useCallback(async (shift_id, staff_id, role) => {
+    _setShiftAssignments(prev=>{
+      const ex = prev.find(x=>x.shift_id===shift_id && x.staff_id===staff_id);
+      return ex
+        ? prev.map(x=>(x.shift_id===shift_id && x.staff_id===staff_id)?{...x,role}:x)
+        : [...prev,{shift_id,staff_id,role}];
+    });
+    const {error} = await sb.from("shift_assignments").upsert({shift_id,staff_id,role});
+    if (error) toast(`Lỗi phân ca: ${error.message}`,"error");
+  },[]);
+  const deleteAssignment = useCallback(async (shift_id, staff_id) => {
+    _setShiftAssignments(prev=>prev.filter(x=>!(x.shift_id===shift_id && x.staff_id===staff_id)));
+    const {error} = await sb.from("shift_assignments").delete().match({shift_id,staff_id});
+    if (error) toast(`Lỗi xoá phân ca: ${error.message}`,"error");
+  },[]);
 
   // ── Initial fetch ──
   useEffect(()=>{
     (async()=>{
       try{
-        const [pR,sR,oR,zR,shR,cR] = await Promise.all([
+        const [pR,sR,oR,zR,shR,cR,shsR,saR] = await Promise.all([
           sb.from("products").select("*").order("id"),
           sb.from("staff").select("*").order("id"),
           sb.from("orders").select("*").order("num"),
           sb.from("zones").select("*").order("sort"),
           sb.from("shift").select("*").eq("id",1).maybeSingle(),
           sb.from("categories").select("*").order("sort"),
+          sb.from("shifts").select("*").order("sort"),
+          sb.from("shift_assignments").select("*"),
         ]);
         if (pR.error||sR.error||oR.error||zR.error){
           toast("Lỗi tải dữ liệu. Kiểm tra Supabase / chạy schema.sql","error");
-          console.error(pR.error,sR.error,oR.error,zR.error,cR.error);
+          console.error(pR.error,sR.error,oR.error,zR.error,cR.error,shsR.error,saR.error);
           setLoading(false); return;
         }
         const ps = (pR.data||[]).map(productFromDb);
@@ -2077,8 +2309,10 @@ function App(){
         const zs = zR.data||[];
         const sh = shR.data ? shiftFromDb(shR.data) : {name:"Ca sáng",start:"07:45",end:"12:00"};
         const cs = cR.data || [];
-        productsRef.current=ps; staffRef.current=ss; ordersRef.current=os; zonesRef.current=zs; shiftRef.current=sh; categoriesRef.current=cs;
-        _setProducts(ps); _setStaff(ss); _setOrders(os); _setZones(zs); _setShift(sh); _setCategories(cs);
+        const shs = shsR.data || [];
+        const sas = saR.data || [];
+        productsRef.current=ps; staffRef.current=ss; ordersRef.current=os; zonesRef.current=zs; shiftRef.current=sh; categoriesRef.current=cs; shiftsRef.current=shs;
+        _setProducts(ps); _setStaff(ss); _setOrders(os); _setZones(zs); _setShift(sh); _setCategories(cs); _setShifts(shs); _setShiftAssignments(sas);
         // Auto-login bằng PIN đã lưu (nếu vẫn match)
         const savedPin = localStorage.getItem("clb_pin");
         if (savedPin){
@@ -2186,8 +2420,22 @@ function App(){
         else mergeStaff(p.new);
       })
       .on("postgres_changes",{event:"*",schema:"public",table:"orders"},p=>{
-        if (p.eventType==="DELETE") removeFrom(_setOrders,ordersRef,"num",p.old.num);
-        else mergeOrder(p.new);
+        if (p.eventType==="DELETE") { removeFrom(_setOrders,ordersRef,"num",p.old.num); return; }
+        const r = p.new;
+        const role = effectiveRoleRef.current;
+        // Push notification theo role
+        if (p.eventType === "INSERT") {
+          if (role === "pha_che" || role === "truong_ca") {
+            const itemCount = (r.items||[]).reduce((s,i)=>s+(i.qty||0),0);
+            notify(`🆕 Đơn mới ${orderId(r.num)}`, `${r.cus} — ${itemCount} món`);
+          }
+        } else if (p.eventType === "UPDATE") {
+          // Đơn sẵn sàng + cần ship → báo shipper
+          if (r.st === "san_sang" && r.type === "ship" && (role === "shipper" || role === "truong_ca")) {
+            notify(`📦 Đơn cần giao ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
+          }
+        }
+        mergeOrder(r);
       })
       .on("postgres_changes",{event:"*",schema:"public",table:"zones"},p=>{
         if (p.eventType==="DELETE") removeFrom(_setZones,zonesRef,"id",p.old.id);
@@ -2206,6 +2454,35 @@ function App(){
           });
         } else mergeCat(p.new);
       })
+      .on("postgres_changes",{event:"*",schema:"public",table:"shifts"},p=>{
+        if (p.eventType==="DELETE") {
+          _setShifts(arr=>{
+            if (!arr.find(x=>x.id===p.old.id)) return arr;
+            const next = arr.filter(x=>x.id!==p.old.id);
+            shiftsRef.current = next; return next;
+          });
+        } else {
+          const r = p.new;
+          _setShifts(arr=>{
+            const ex = arr.find(x=>x.id===r.id);
+            if (ex && JSON.stringify(ex)===JSON.stringify(r)) return arr;
+            const next = ex ? arr.map(x=>x.id===r.id?r:x) : [...arr,r].sort((a,b)=>(a.sort||0)-(b.sort||0));
+            shiftsRef.current = next; return next;
+          });
+        }
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"shift_assignments"},p=>{
+        if (p.eventType==="DELETE") {
+          _setShiftAssignments(arr=>arr.filter(x=>!(x.shift_id===p.old.shift_id && x.staff_id===p.old.staff_id)));
+        } else {
+          const r = p.new;
+          _setShiftAssignments(arr=>{
+            const ex = arr.find(x=>x.shift_id===r.shift_id && x.staff_id===r.staff_id);
+            if (ex && JSON.stringify(ex)===JSON.stringify(r)) return arr;
+            return ex ? arr.map(x=>(x.shift_id===r.shift_id && x.staff_id===r.staff_id)?r:x) : [...arr,r];
+          });
+        }
+      })
       .subscribe(status=>{
         if (status==="SUBSCRIBED") setConnStatus("live");
         else if (status==="CHANNEL_ERROR"||status==="CLOSED") setConnStatus("offline");
@@ -2214,9 +2491,43 @@ function App(){
   },[]);
 
   useEffect(()=>{const t=setInterval(()=>setTime(nowS()),20000);return()=>clearInterval(t);},[]);
+  // Re-render mỗi 60s để effectiveRole cập nhật khi ca chuyển
+  useEffect(()=>{const t=setInterval(()=>setTickMin(x=>x+1),60000);return()=>clearInterval(t);},[]);
+
+  // Lưu pref notification
+  useEffect(()=>{
+    notifEnabledRef.current = notifEnabled;
+    localStorage.setItem("clb_notif", notifEnabled?"1":"0");
+  },[notifEnabled]);
+
+  const notify = useCallback((title, body) => {
+    if (!notifEnabledRef.current) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try { new Notification(title, {body, icon:"🛒", tag:"clb-"+Date.now(), silent:false}); } catch(e){}
+  },[]);
+
+  const toggleNotif = useCallback(async () => {
+    if (!("Notification" in window)) { toast("Trình duyệt không hỗ trợ thông báo","error"); return; }
+    if (notifEnabled) { setNotifEnabled(false); toast("Đã tắt thông báo","info"); return; }
+    if (Notification.permission === "denied") {
+      toast("Đã bị chặn — vào cài đặt trình duyệt cho phép","warn"); return;
+    }
+    if (Notification.permission === "default") {
+      const p = await Notification.requestPermission();
+      if (p !== "granted") { toast("Bạn đã từ chối quyền thông báo","warn"); return; }
+    }
+    setNotifEnabled(true);
+    toast("✓ Đã bật thông báo realtime","success");
+    try { new Notification("Thông báo đã bật",{body:"Bạn sẽ nhận thông báo cho các sự kiện liên quan",icon:"🛒"}); } catch(e){}
+  },[notifEnabled,toast]);
+
+  // Tính ca hiện tại sớm để SCREENS dùng được (dù chưa có currentUser)
+  const currentShift = getCurrentShift(shifts);
+  const effectiveRoleEarly = getEffectiveRole(currentShift, shiftAssignments, currentUser);
+  if (currentUser) effectiveRoleRef.current = effectiveRoleEarly;
 
   const SCREENS={
-    dashboard:{title:"Tổng quan",       sub:`${shift.name} · ${shift.start} – ${shift.end} · ${staff.filter(s=>s.active).length} thành viên đang trực`,
+    dashboard:{title:"Tổng quan",       sub:`${currentShift?currentShift.name+" · "+currentShift.start_at+"–"+currentShift.end_at:"Ngoài giờ làm việc"} · ${shiftAssignments.filter(a=>a.shift_id===currentShift?.id && a.role!=="off").length} thành viên trong ca`,
                comp:<Dashboard orders={orders} staff={staff}/>},
     order:    {title:"Trực đơn",         sub:"Nhận & tạo đơn hàng · Tách KPI người sale",
                comp:<OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} categories={categories} toast={toast}/>},
@@ -2227,9 +2538,9 @@ function App(){
     staff:    {title:"Nhân sự & KPI",    sub:"Phân công · Theo dõi KPI · Bảng xếp hạng",
                comp:<StaffScreen orders={orders} staff={staff}/>},
     report:   {title:"Báo cáo & Log",    sub:"Tổng kết cuối ca · Xuất dữ liệu CSV",
-               comp:<ReportScreen orders={orders} staff={staff} products={products} shift={shift} toast={toast}/>},
-    settings: {title:"Cài đặt",          sub:"Quản lý nhân sự, sản phẩm, danh mục, cấu hình chung",
-               comp:<SettingsScreen products={products} setProducts={setProducts} staff={staff} setStaff={setStaff} zones={zones} setZones={setZones} shift={shift} setShift={setShift} categories={categories} setCategories={setCategories} currentUser={currentUser} toast={toast}/>},
+               comp:<ReportScreen orders={orders} staff={staff} products={products} shift={currentShift?{name:currentShift.name,start:currentShift.start_at,end:currentShift.end_at}:shift} toast={toast}/>},
+    settings: {title:"Cài đặt",          sub:"Quản lý nhân sự, sản phẩm, danh mục, lịch ca",
+               comp:<SettingsScreen products={products} setProducts={setProducts} staff={staff} setStaff={setStaff} zones={zones} setZones={setZones} shift={shift} setShift={setShift} categories={categories} setCategories={setCategories} shifts={shifts} setShifts={setShifts} shiftAssignments={shiftAssignments} upsertAssignment={upsertAssignment} deleteAssignment={deleteAssignment} currentUser={currentUser} toast={toast}/>},
   };
 
   if (loading) {
@@ -2260,21 +2571,75 @@ function App(){
     return <LoginScreen staff={staff} onLogin={handleLogin}/>;
   }
 
-  // Lọc màn hình theo role
-  const allowed = ROLE_PERMS[currentUser.role] || [];
+  const effectiveRole = effectiveRoleEarly;
+
+  // Đang nghỉ → màn rest
+  if (effectiveRole === "off") {
+    return <RestScreen user={currentUser} currentShift={currentShift} shifts={shifts} shiftAssignments={shiftAssignments} onLogout={handleLogout}/>;
+  }
+
+  // Lọc màn theo role thực tế
+  const allowed = ROLE_PERMS[effectiveRole] || [];
   const activeScreen = allowed.includes(screen) ? screen : (allowed[0]||"dashboard");
   const cur = SCREENS[activeScreen];
 
   return (
     <div className="app-shell" style={{fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
       {sbOpen && <div className="sb-overlay" onClick={()=>setSbOpen(false)}/>}
-      <Sidebar screen={activeScreen} setScreen={(s)=>{setScreen(s);setSbOpen(false);}} orders={orders} shift={shift} allowed={allowed} sbOpen={sbOpen} onClose={()=>setSbOpen(false)} onLogout={handleLogout} currentUser={currentUser}/>
+      <Sidebar screen={activeScreen} setScreen={(s)=>{setScreen(s);setSbOpen(false);}} orders={orders} currentShift={currentShift} allowed={allowed} sbOpen={sbOpen} onClose={()=>setSbOpen(false)} onLogout={handleLogout} currentUser={currentUser} effectiveRole={effectiveRole}/>
       <div className="app-main">
-        <TopBar title={cur.title} sub={cur.sub} time={time} currentUser={currentUser} connStatus={connStatus} onLogout={handleLogout} onMenu={()=>setSbOpen(true)}/>
+        <TopBar title={cur.title} sub={cur.sub} time={time} currentUser={currentUser} connStatus={connStatus} onLogout={handleLogout} onMenu={()=>setSbOpen(true)} effectiveRole={effectiveRole} currentShift={currentShift} notifEnabled={notifEnabled} onToggleNotif={toggleNotif}/>
         <div style={{flex:1,overflow:"hidden",display:"flex",minHeight:0}}>{cur.comp}</div>
       </div>
       <Toast list={toasts} dismiss={dismiss}/>
       <HelpPopup/>
+    </div>
+  );
+}
+
+function RestScreen({user,currentShift,shifts,shiftAssignments,onLogout}){
+  // Tìm ca tiếp theo user có làm
+  const nextShift = (()=>{
+    if (!shifts.length) return null;
+    const ordered = [...shifts].sort((a,b)=>(a.sort||0)-(b.sort||0));
+    const now = new Date(); const m = now.getHours()*60+now.getMinutes();
+    const curIdx = currentShift ? ordered.findIndex(s=>s.id===currentShift.id) : -1;
+    for (let i=1; i<=ordered.length; i++){
+      const s = ordered[(curIdx+i)%ordered.length];
+      const a = shiftAssignments.find(x=>x.shift_id===s.id && x.staff_id===user.id);
+      if (a && a.role !== "off") return {shift:s, role:a.role};
+    }
+    return null;
+  })();
+  const [tc,bg] = RC[user.role]||["#475569","#f5f5f5"];
+  return (
+    <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"linear-gradient(135deg,#FFF4F0 0%,#FFE4D8 100%)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+      <div style={{maxWidth:440,width:"100%",background:"#fff",borderRadius:16,padding:"28px 24px",textAlign:"center",boxShadow:"0 8px 40px rgba(238,77,45,.18)"}}>
+        <div style={{fontSize:56,marginBottom:10}}>😴</div>
+        <div style={{fontSize:20,fontWeight:800,color:"#212121",marginBottom:6}}>Bạn đang nghỉ ca này</div>
+        <div style={{fontSize:13,color:"#767676",marginBottom:20,lineHeight:1.6}}>
+          {currentShift ? <>Ca hiện tại: <b>{currentShift.name}</b> ({currentShift.start_at}–{currentShift.end_at})</> : "Hiện chưa trong giờ làm việc"}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,justifyContent:"center",padding:"10px 14px",background:bg,borderRadius:10,marginBottom:16}}>
+          <div style={{width:36,height:36,borderRadius:"50%",background:"#fff",color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800}}>{inits(user.name)}</div>
+          <div style={{textAlign:"left"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>{user.name}</div>
+            <div style={{fontSize:11,color:tc,fontWeight:700}}>{RL[user.role]} (mặc định)</div>
+          </div>
+        </div>
+        {nextShift && (
+          <div style={{padding:"12px 14px",background:"#FFF4F0",borderRadius:10,marginBottom:16,textAlign:"left"}}>
+            <div style={{fontSize:10,color:"var(--or)",fontWeight:800,marginBottom:3,letterSpacing:".3px"}}>CA TIẾP THEO CỦA BẠN</div>
+            <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>{nextShift.shift.name} · {nextShift.shift.start_at}–{nextShift.shift.end_at}</div>
+            <div style={{fontSize:11,color:"#767676",marginTop:2}}>Vai trò: <b style={{color:RC[nextShift.role]?.[0]||"#475569"}}>{RL[nextShift.role]||nextShift.role}</b></div>
+          </div>
+        )}
+        <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+          <button onClick={()=>location.reload()} style={{padding:"9px 16px",border:"1px solid var(--bd)",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#475569",fontWeight:600}}>↻ Kiểm tra lại</button>
+          <button onClick={onLogout} style={{padding:"9px 16px",border:"1px solid #fca5a5",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#b91c1c",fontWeight:600}}>Đăng xuất</button>
+        </div>
+        <div style={{marginTop:14,fontSize:10,color:"#999"}}>Nếu lịch sai, liên hệ Admin/Trưởng ca</div>
+      </div>
     </div>
   );
 }
