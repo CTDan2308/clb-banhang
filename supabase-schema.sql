@@ -48,8 +48,11 @@ CREATE TABLE IF NOT EXISTS orders (
   kpi_id     BIGINT,
   sid        BIGINT,
   note       TEXT,
+  return_reason TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- v1.2 migration: thêm cột return_reason nếu DB cũ chưa có
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_reason TEXT;
 
 CREATE TABLE IF NOT EXISTS zones (
   id         BIGINT PRIMARY KEY,
@@ -212,16 +215,22 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- v1.2: 5 ca trong ngày (migration tự dọn lịch 3-ca cũ nếu phát hiện)
 DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM shifts WHERE id IN (1,2,3) AND name IN ('Ca sáng','Ca trưa','Ca chiều')) THEN
+    TRUNCATE shifts CASCADE;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM shifts) THEN
     INSERT INTO shifts (id,name,start_at,end_at,sort) VALUES
-      (1,'Ca sáng',  '07:00','12:00', 0),
-      (2,'Ca trưa',  '12:00','17:00', 1),
-      (3,'Ca chiều', '17:00','22:00', 2);
+      (1,'Ca 1','07:30','09:30',0),
+      (2,'Ca 2','09:30','12:30',1),
+      (3,'Ca 3','12:30','14:30',2),
+      (4,'Ca 4','14:30','17:00',3),
+      (5,'Ca 5','17:00','19:00',4);
   END IF;
 END $$;
 
--- Seed assignments: tất cả staff đều làm role mặc định của họ trong Ca sáng
+-- Seed assignments: tất cả staff đều làm role mặc định trong Ca 1
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM shift_assignments) THEN
     INSERT INTO shift_assignments (shift_id, staff_id, role)

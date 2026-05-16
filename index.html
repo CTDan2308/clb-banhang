@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CLB Quản Lý Bán Hàng v1.0</title>
+<title>CLB Quản Lý Bán Hàng v1.2</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -43,7 +43,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--or)!important}
 .mobile-only{display:none}
 .desktop-only{display:flex}
 .order-shell{display:flex;flex:1;overflow:hidden;background:var(--bg)}
-.order-left{flex:1;min-width:0;border-right:1px solid var(--bd);display:flex;flex-direction:column;background:#fff}
+.order-left{flex:1;min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--bd);display:flex;flex-direction:column;background:#fff}
 .order-right{width:340px;flex-shrink:0;overflow-y:auto;padding:12px;background:var(--bg)}
 
 @media (max-width:900px){
@@ -85,8 +85,8 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 const orderId = num => "ĐH" + String(num).padStart(3,"0");
 const productFromDb = r => ({id:r.id,name:r.name,cat:r.cat,price:r.price,stock:r.stock,on:r.on_menu,emoji:r.emoji,recipe:r.recipe});
 const productToDb   = p => ({id:p.id,name:p.name,cat:p.cat,price:p.price,stock:p.stock,on_menu:p.on!==false,emoji:p.emoji,recipe:p.recipe});
-const orderFromDb   = r => ({id:orderId(r.num),num:r.num,t:r.t,cus:r.cus,ph:r.ph||"",type:r.type,adr:r.adr||"",items:r.items||[],st:r.st,pay:r.pay,dFee:r.d_fee,disc:r.disc,dT:r.d_t,by:r.by_id,kpi:r.kpi_id,sid:r.sid,note:r.note||""});
-const orderToDb     = o => ({num:o.num,t:o.t,cus:o.cus,ph:o.ph,type:o.type,adr:o.adr,items:o.items,st:o.st,pay:o.pay,d_fee:o.dFee,disc:o.disc,d_t:o.dT,by_id:o.by,kpi_id:o.kpi,sid:o.sid,note:o.note});
+const orderFromDb   = r => ({id:orderId(r.num),num:r.num,t:r.t,cus:r.cus,ph:r.ph||"",type:r.type,adr:r.adr||"",items:r.items||[],st:r.st,pay:r.pay,dFee:r.d_fee,disc:r.disc,dT:r.d_t,by:r.by_id,kpi:r.kpi_id,sid:r.sid,note:r.note||"",returnReason:r.return_reason||""});
+const orderToDb     = o => ({num:o.num,t:o.t,cus:o.cus,ph:o.ph,type:o.type,adr:o.adr,items:o.items,st:o.st,pay:o.pay,d_fee:o.dFee,disc:o.disc,d_t:o.dT,by_id:o.by,kpi_id:o.kpi,sid:o.sid,note:o.note,return_reason:o.returnReason||null});
 const shiftFromDb   = r => ({name:r.name,start:r.start_at,end:r.end_at});
 const shiftToDb     = s => ({name:s.name,start_at:s.start,end_at:s.end});
 
@@ -147,9 +147,11 @@ const SHIFT0 = {name:"Ca sáng",start:"07:45",end:"12:00"};
 const ST = {
   moi:        {label:"Mới",        bg:"#FFF4F0",color:"#EE4D2D"},
   pha_che:    {label:"Đang pha",   bg:"#dbeafe",color:"#1e40af"},
-  san_sang:   {label:"Sẵn sàng",   bg:"#ede9fe",color:"#5b21b6"},
+  san_sang:   {label:"Chờ shipper",bg:"#ede9fe",color:"#5b21b6"},
+  da_lay:     {label:"Đã lấy hàng",bg:"#fef3c7",color:"#854d0e"},
   dang_giao:  {label:"Đang giao",  bg:"#ffedd5",color:"#c2410c"},
   hoan_thanh: {label:"Hoàn thành", bg:"#dcfce7",color:"#15803d"},
+  hoan_hang:  {label:"Hoàn hàng",  bg:"#fce7f3",color:"#9d174d"},
   huy:        {label:"Đã huỷ",     bg:"#fee2e2",color:"#b91c1c"},
 };
 const RL = {truong_ca:"Trưởng ca",truc_don:"Trực đơn",pha_che:"Pha chế",shipper:"Shipper",admin:"Admin"};
@@ -178,7 +180,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -876,7 +878,7 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
     <div className="order-shell">
       <div className="order-left">
 
-        <div style={{padding:"13px 14px 10px",borderBottom:"1px solid #f0f0f0"}}>
+        <div style={{padding:"13px 14px 10px",borderBottom:"1px solid #f0f0f0",flexShrink:0,maxHeight:"40vh",overflowY:"auto"}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 120px",gap:8,marginBottom:8}}>
             <div>
               <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Khách hàng *</div>
@@ -933,7 +935,7 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
           )}
         </div>
 
-        <div style={{padding:"9px 14px 6px",borderBottom:"1px solid #f0f0f0"}}>
+        <div style={{padding:"9px 14px 6px",borderBottom:"1px solid #f0f0f0",flexShrink:0}}>
           <input value={search} onChange={e=>setSrch(e.target.value)} placeholder="🔍 Tìm sản phẩm..."
             style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,marginBottom:7}}/>
           <div style={{display:"flex",gap:4,overflowX:"auto"}}>
@@ -944,7 +946,7 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
           </div>
         </div>
 
-        <div style={{flex:1,overflowY:"auto",padding:"10px 14px"}}>
+        <div style={{flex:1,overflowY:"auto",padding:"10px 14px",minHeight:140}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:9}}>
             {filtered.map(p=>{
               const q=cqty(p.id);
@@ -967,7 +969,7 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
           </div>
         </div>
 
-        <div style={{borderTop:"2px solid #f0f0f0",background:"#fff",display:"flex",flexDirection:"column",flexShrink:0,maxHeight:"55vh"}}>
+        <div style={{borderTop:"2px solid #f0f0f0",background:"#fff",display:"flex",flexDirection:"column",flexShrink:0,maxHeight:"45vh"}}>
         <div style={{flex:1,overflowY:"auto",padding:"10px 14px 4px",minHeight:0}}>
           {cart.items.length>0&&(
             <div style={{marginBottom:8}}>
@@ -1194,28 +1196,224 @@ function KitchenScreen({orders,setOrders,products,setProducts,toast}){
 /* ══════════════════════════════════════════════════════════
    SHIPPER SCREEN
 ══════════════════════════════════════════════════════════ */
-function ShipperScreen({orders,setOrders,staff,toast}){
+/* Modal nhập lý do hoàn hàng */
+function ReturnReasonModal({order,onClose,onConfirm}){
+  const [reason,setReason] = useState("");
+  const presets = ["Khách không nhận máy","Khách báo huỷ giữa đường","Sai địa chỉ","Sai món","Khác"];
+  const submit = () => {
+    const r = reason.trim();
+    if (!r) return;
+    onConfirm(r);
+  };
+  return (
+    <div onClick={e=>e.target===e.currentTarget&&onClose()}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,animation:"fadeIn .15s"}}>
+      <div style={{background:"#fff",borderRadius:12,width:"100%",maxWidth:420,padding:20,animation:"fadeUp .2s ease"}}>
+        <div style={{fontSize:16,fontWeight:700,color:"#212121",marginBottom:4}}>↩️ Hoàn hàng đơn {order.id}</div>
+        <div style={{fontSize:12,color:"#767676",marginBottom:14}}>Khách: <b style={{color:"#212121"}}>{order.cus}</b> · 📍 {order.adr}</div>
+        <div style={{fontSize:11,color:"#767676",fontWeight:600,marginBottom:5}}>Chọn lý do nhanh:</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+          {presets.map(p=>(
+            <button key={p} onClick={()=>setReason(p)}
+              style={{fontSize:11,padding:"5px 10px",border:`1px solid ${reason===p?"var(--or)":"var(--bd)"}`,borderRadius:5,background:reason===p?"#FFF4F0":"#fff",cursor:"pointer",color:reason===p?"var(--or)":"#475569",fontWeight:reason===p?700:500}}>{p}</button>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:"#767676",fontWeight:600,marginBottom:5}}>Hoặc nhập chi tiết:</div>
+        <textarea value={reason} onChange={e=>setReason(e.target.value)}
+          placeholder="Mô tả lý do hoàn hàng..."
+          style={{width:"100%",padding:"8px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,minHeight:80,resize:"vertical"}}/>
+        <div style={{display:"flex",gap:8,marginTop:14,justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={{padding:"8px 16px",border:"1px solid var(--bd)",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#475569"}}>Huỷ</button>
+          <button onClick={submit} disabled={!reason.trim()}
+            style={{padding:"8px 16px",border:"none",borderRadius:6,fontSize:12,fontWeight:700,cursor:reason.trim()?"pointer":"not-allowed",background:reason.trim()?"#9d174d":"#e0e0e0",color:"#fff"}}>
+            Xác nhận hoàn hàng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* OrderCard dùng chung cho cả shipper và admin */
+function ShipperOrderCard({o,staff,actions,showShipper=true}){
+  const sh = o.sid ? staff.find(x=>x.id===o.sid) : null;
+  return (
+    <div style={{border:"1px solid #f0f0f0",borderRadius:8,padding:11,background:"#fff"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+        <span style={{fontFamily:"monospace",fontSize:12,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
+        <span style={{fontSize:10,color:"#767676"}}>{o.t}</span>
+      </div>
+      <div style={{fontSize:12,color:"#212121",fontWeight:700,marginBottom:2}}>{o.cus}</div>
+      {o.ph&&<div style={{fontSize:11,color:"#767676",marginBottom:2}}>📱 <a href={`tel:${o.ph}`} style={{color:"#1e40af",textDecoration:"none"}}>{o.ph}</a></div>}
+      <div style={{fontSize:11,color:"#767676",marginBottom:5,lineHeight:1.4}}>📍 {o.adr}</div>
+      <div style={{fontSize:11,color:"#475569",marginBottom:6,lineHeight:1.4}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</div>
+      {o.returnReason&&<div style={{fontSize:11,color:"#9d174d",background:"#fce7f3",borderRadius:4,padding:"4px 8px",marginBottom:6}}>↩️ {o.returnReason}</div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:actions?8:0}}>
+        <span style={{fontSize:12,color:"var(--or)",fontWeight:800}}>Ship {fmt(o.dFee)}</span>
+        {showShipper&&sh&&<span style={{fontSize:10,color:"#999"}}>🛵 {sh.name}</span>}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
+function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast}){
+  const [returnFor,setReturnFor] = useState(null);
+  const isShipper   = effectiveRole==="shipper";
+  const canAssign   = effectiveRole==="truong_ca" || effectiveRole==="admin";
+
   const ship    = orders.filter(o=>o.type==="ship");
   const shippers= staff.filter(s=>s.role==="shipper"&&s.active);
-  const done    = ship.filter(o=>o.st==="hoan_thanh");
+
+  const setSt = (oid,patch,msg,type="success") => {
+    setOrders(os=>os.map(o=>o.id===oid?{...o,...patch}:o));
+    if (msg) toast(msg,type);
+  };
+  const assign  = (oid,sid)=>{
+    if (!canAssign) { toast("Chỉ Trưởng ca / Admin mới được phân công shipper","warn"); return; }
+    setSt(oid,{sid},`Phân công ${staff.find(s=>s.id===sid)?.name} → đơn ${oid}`);
+  };
+  const pickup    = oid => setSt(oid,{st:"da_lay"},`Đã ghi nhận lấy đơn ${oid}`);
+  const startShip = oid => setSt(oid,{st:"dang_giao"},`Bắt đầu giao đơn ${oid}`);
+  const complete  = oid => setSt(oid,{st:"hoan_thanh"},`✓ Giao thành công đơn ${oid}`);
+  const cancel    = oid => { if(!confirm("Huỷ đơn này?")) return; setSt(oid,{st:"huy"},"Đã huỷ đơn","warn"); };
+  const doReturn  = (oid,reason) => { setSt(oid,{st:"hoan_hang",returnReason:reason},"↩️ Đã ghi nhận hoàn hàng","warn"); setReturnFor(null); };
+
+  /* ── VIEW CHO SHIPPER (cá nhân, chỉ xem đơn của mình) ── */
+  if (isShipper) {
+    const mine = orders.filter(o=>o.type==="ship" && o.sid===currentUser.id);
+    const pending  = mine.filter(o=>o.st==="san_sang");
+    const picked   = mine.filter(o=>o.st==="da_lay");
+    const onroute  = mine.filter(o=>o.st==="dang_giao");
+    const finished = mine.filter(o=>["hoan_thanh","hoan_hang","huy"].includes(o.st));
+
+    const stats=[
+      {l:"Chờ lấy đơn", v:pending.length,  ic:"ti-package",   bg:"#ede9fe",tc:"#5b21b6"},
+      {l:"Đã lấy hàng", v:picked.length,   ic:"ti-clock",     bg:"#fef3c7",tc:"#854d0e"},
+      {l:"Đang giao",   v:onroute.length,  ic:"ti-motorbike", bg:"#ffedd5",tc:"#c2410c"},
+      {l:"Đã xong hôm nay",v:finished.length,ic:"ti-circle-check",bg:"#dcfce7",tc:"#15803d"},
+    ];
+
+    return (
+      <div style={{flex:1,overflowY:"auto",padding:14,background:"var(--bg)"}}>
+        <div className="card" style={{padding:"12px 14px",marginBottom:14,background:"linear-gradient(135deg,#EE4D2D 0%,#FF8557 100%)",color:"#fff",border:"none"}}>
+          <div style={{fontSize:11,opacity:.9,marginBottom:2}}>Chào shipper</div>
+          <div style={{fontSize:17,fontWeight:800}}>🛵 {currentUser.name}</div>
+          <div style={{fontSize:11,opacity:.85,marginTop:4}}>{mine.length} đơn được giao cho bạn hôm nay</div>
+        </div>
+
+        <div className="grid-stats-4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+          {stats.map(s=>(
+            <div key={s.l} className="card" style={{padding:"11px 12px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                <div style={{fontSize:10,color:"#767676"}}>{s.l}</div>
+                <div style={{width:26,height:26,borderRadius:6,background:s.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><i className={`ti ${s.ic}`} style={{fontSize:13,color:s.tc}}/></div>
+              </div>
+              <div style={{fontSize:20,fontWeight:800,color:"#212121"}}>{s.v}</div>
+            </div>
+          ))}
+        </div>
+
+        {pending.length>0&&(
+          <div className="card" style={{padding:12,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+              <Bdg s="san_sang"/><span>Chờ lấy đơn ({pending.length})</span>
+              <span style={{fontSize:10,color:"#999",fontWeight:400,marginLeft:"auto"}}>Bấm "Đã lấy" khi nhận hàng từ quầy</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
+              {pending.map(o=>(
+                <ShipperOrderCard key={o.id} o={o} staff={staff} showShipper={false} actions={
+                  <div style={{display:"flex",gap:5}}>
+                    <button onClick={()=>cancel(o.id)} style={{flex:1,fontSize:11,padding:"7px",background:"#fff",border:"1px solid #fca5a5",borderRadius:5,color:"#b91c1c",cursor:"pointer",fontWeight:600}}>Huỷ</button>
+                    <button onClick={()=>pickup(o.id)} className="btn-pri" style={{flex:2,fontSize:11,padding:"7px",borderRadius:5,fontWeight:700}}>📦 Đã lấy hàng</button>
+                  </div>
+                }/>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {picked.length>0&&(
+          <div className="card" style={{padding:12,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+              <Bdg s="da_lay"/><span>Đã lấy hàng — chuẩn bị giao ({picked.length})</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
+              {picked.map(o=>(
+                <ShipperOrderCard key={o.id} o={o} staff={staff} showShipper={false} actions={
+                  <button onClick={()=>startShip(o.id)} className="btn-pri" style={{width:"100%",fontSize:12,padding:"8px",borderRadius:5,fontWeight:700}}>🛵 Bắt đầu giao</button>
+                }/>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {onroute.length>0&&(
+          <div className="card" style={{padding:12,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+              <Bdg s="dang_giao"/><span>Đang giao ({onroute.length})</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
+              {onroute.map(o=>(
+                <ShipperOrderCard key={o.id} o={o} staff={staff} showShipper={false} actions={
+                  <div style={{display:"flex",gap:5}}>
+                    <button onClick={()=>setReturnFor(o)} style={{flex:1,fontSize:11,padding:"7px",background:"#fce7f3",border:"none",borderRadius:5,color:"#9d174d",cursor:"pointer",fontWeight:700}}>↩ Hoàn hàng</button>
+                    <button onClick={()=>complete(o.id)} style={{flex:2,fontSize:11,padding:"7px",background:"#15803d",border:"none",borderRadius:5,color:"#fff",cursor:"pointer",fontWeight:700}}>✓ Hoàn thành</button>
+                  </div>
+                }/>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {finished.length>0&&(
+          <div className="card" style={{padding:12,marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>Lịch sử đơn hôm nay ({finished.length})</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:8}}>
+              {[...finished].reverse().map(o=>(
+                <div key={o.id} style={{border:"1px solid #f0f0f0",borderRadius:6,padding:"8px 10px",background:"#fafafa",opacity:.85}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontFamily:"monospace",fontSize:11,fontWeight:700,color:"#475569"}}>{o.id}</span>
+                    <Bdg s={o.st}/>
+                  </div>
+                  <div style={{fontSize:11,color:"#212121"}}>{o.cus} · {fmt(o.dFee)}</div>
+                  {o.returnReason&&<div style={{fontSize:10,color:"#9d174d",marginTop:2}}>↩️ {o.returnReason}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {mine.length===0&&(
+          <div style={{textAlign:"center",padding:"60px 16px",color:"#999"}}>
+            <i className="ti ti-coffee" style={{fontSize:46,display:"block",marginBottom:10}}/>
+            <div style={{fontSize:13}}>Chưa có đơn nào được giao cho bạn</div>
+            <div style={{fontSize:11,marginTop:4}}>Khi có đơn mới bạn sẽ được Trưởng ca phân công</div>
+          </div>
+        )}
+
+        {returnFor&&<ReturnReasonModal order={returnFor} onClose={()=>setReturnFor(null)} onConfirm={r=>doReturn(returnFor.id,r)}/>}
+      </div>
+    );
+  }
+
+  /* ── VIEW CHO TRƯỞNG CA / ADMIN ── */
+  const wait     = ship.filter(o=>o.st==="san_sang");
+  const picked   = ship.filter(o=>o.st==="da_lay");
+  const onroute  = ship.filter(o=>o.st==="dang_giao");
+  const finished = ship.filter(o=>o.st==="hoan_thanh");
+  const returned = ship.filter(o=>o.st==="hoan_hang");
 
   const stats=[
-    {l:"Chờ lấy hàng",  v:ship.filter(o=>o.st==="san_sang").length,ic:"ti-clock",       bg:"#ede9fe",tc:"#5b21b6"},
-    {l:"Đang giao",     v:ship.filter(o=>o.st==="dang_giao").length,ic:"ti-motorbike",   bg:"#ffedd5",tc:"#c2410c"},
-    {l:"Hoàn thành",    v:done.length,                              ic:"ti-circle-check",bg:"#dcfce7",tc:"#15803d"},
-    {l:"Doanh thu ship",v:fmt(done.reduce((s,o)=>s+o.dFee,0)),      ic:"ti-cash",        bg:"#FFF4F0",tc:"#EE4D2D"},
+    {l:"Chờ phân công",v:wait.length,   ic:"ti-clock",       bg:"#ede9fe",tc:"#5b21b6"},
+    {l:"Shipper đang đi",v:picked.length+onroute.length,ic:"ti-motorbike",bg:"#ffedd5",tc:"#c2410c"},
+    {l:"Đã giao",     v:finished.length,ic:"ti-circle-check",bg:"#dcfce7",tc:"#15803d"},
+    {l:"Hoàn hàng",   v:returned.length,ic:"ti-arrow-back",  bg:"#fce7f3",tc:"#9d174d"},
   ];
-
-  const assign=(oid,sid)=>{
-    setOrders(os=>os.map(o=>o.id===oid?{...o,st:"dang_giao",sid}:o));
-    toast(`Phân công ${staff.find(s=>s.id===sid)?.name} → đơn ${oid}`,"success");
-  };
-  const complete= oid=>{setOrders(os=>os.map(o=>o.id===oid?{...o,st:"hoan_thanh"}:o));toast("✓ Giao hàng thành công","success");};
-  const issue   = oid=>{setOrders(os=>os.map(o=>o.id===oid?{...o,st:"huy"}:o));toast("⚠ Đã ghi nhận sự cố","warn");};
 
   return (
     <div style={{flex:1,overflowY:"auto",padding:16,background:"var(--bg)"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+      <div className="grid-stats-4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
         {stats.map(s=>(
           <div key={s.l} className="card" style={{padding:"13px 14px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
@@ -1227,82 +1425,105 @@ function ShipperScreen({orders,setOrders,staff,toast}){
         ))}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14}}>
-        {[{s:"san_sang"},{s:"dang_giao"},{s:"hoan_thanh"}].map(({s})=>{
-          const items=ship.filter(o=>o.st===s);
-          return (
-            <div key={s} className="card" style={{overflow:"hidden"}}>
-              <div style={{padding:"10px 14px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
-                <Bdg s={s}/><span style={{fontSize:11,color:"#767676"}}>{items.length} đơn</span>
-              </div>
-              <div style={{padding:10,display:"flex",flexDirection:"column",gap:8}}>
-                {items.map(o=>(
-                  <div key={o.id} style={{border:"1px solid #f0f0f0",borderRadius:8,padding:11}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontFamily:"monospace",fontSize:12,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
-                      <span style={{fontSize:10,color:"#767676"}}>{o.t}</span>
-                    </div>
-                    <div style={{fontSize:12,color:"#212121",fontWeight:700,marginBottom:2}}>{o.cus}</div>
-                    {o.ph&&<div style={{fontSize:11,color:"#767676",marginBottom:2}}>📱 {o.ph}</div>}
-                    <div style={{fontSize:11,color:"#767676",marginBottom:5,lineHeight:1.4}}>📍 {o.adr}</div>
-                    <div style={{fontSize:11,color:"#475569",marginBottom:8,lineHeight:1.4}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</div>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:s==="san_sang"?8:0}}>
-                      <span style={{fontSize:12,color:"var(--or)",fontWeight:800}}>Ship {fmt(o.dFee)}</span>
-                      {s==="dang_giao"&&(
-                        <div style={{display:"flex",gap:4}}>
-                          <button onClick={()=>issue(o.id)} style={{fontSize:10,padding:"4px 8px",background:"#fee2e2",border:"none",borderRadius:5,color:"#b91c1c",cursor:"pointer",fontWeight:600}}>⚠ Lỗi</button>
-                          <button onClick={()=>complete(o.id)} style={{fontSize:10,padding:"4px 8px",background:"#dcfce7",border:"none",borderRadius:5,color:"#15803d",cursor:"pointer",fontWeight:700}}>Xong ✓</button>
-                        </div>
-                      )}
-                    </div>
-                    {s==="san_sang"&&(
-                      <>
-                        <div style={{fontSize:10,color:"#767676",marginBottom:5,fontWeight:600}}>Chọn shipper:</div>
-                        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                          {shippers.map(sh=>{
-                            const busy=orders.some(x=>x.sid===sh.id&&x.st==="dang_giao");
-                            return (
-                              <button key={sh.id} onClick={()=>assign(o.id,sh.id)}
-                                style={{fontSize:11,padding:"5px 9px",background:busy?"#fff5f5":"#fff",border:`1px solid ${busy?"#fca5a5":"var(--bd)"}`,borderRadius:5,color:busy?"#dc2626":"#475569",cursor:"pointer",fontWeight:600}}>
-                                {sh.name.split(" ").slice(-1)[0]}{busy?" 🔴":""}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </>
-                    )}
-                    {s==="dang_giao"&&o.sid&&(
-                      <div style={{fontSize:10,color:"#999",marginTop:4}}>Shipper: {staff.find(x=>x.id===o.sid)?.name}</div>
-                    )}
-                  </div>
-                ))}
-                {items.length===0&&<div style={{textAlign:"center",padding:"24px 0",color:"#999",fontSize:11}}>Trống</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="card" style={{padding:14}}>
-        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>Trạng thái Shipper ca này</div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+      <div className="card" style={{padding:14,marginBottom:14}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+          <i className="ti ti-users" style={{color:"var(--or)"}}/>
+          <span>Trạng thái Shipper ca này</span>
+          <span style={{fontSize:10,color:"#999",fontWeight:400,marginLeft:"auto"}}>Click 1 shipper rồi phân vào đơn bên dưới</span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
           {shippers.map(s=>{
-            const act=orders.filter(o=>o.sid===s.id&&o.st==="dang_giao");
+            const act=orders.filter(o=>o.sid===s.id&&["da_lay","dang_giao"].includes(o.st));
             const dn =orders.filter(o=>o.sid===s.id&&o.st==="hoan_thanh");
+            const isBusy = act.length>0;
             return (
-              <div key={s.id} style={{border:`1.5px solid ${act.length?"#fdba74":"#f0f0f0"}`,borderRadius:9,padding:"11px 14px",display:"flex",alignItems:"center",gap:10,minWidth:185,background:act.length?"#fffbeb":"#fff"}}>
-                <div style={{width:38,height:38,borderRadius:"50%",background:"#fff7ed",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#c2410c",fontWeight:800}}>{inits(s.name)}</div>
-                <div>
-                  <div style={{fontSize:12,fontWeight:700,color:"#212121"}}>{s.name}</div>
-                  <div style={{fontSize:10,color:act.length?"#c2410c":"#22c55e",fontWeight:600}}>{act.length?`🛵 Đang giao ${act.length} đơn`:"● Sẵn sàng"}</div>
-                  <div style={{fontSize:10,color:"#999"}}>✓ Đã giao: {dn.length} đơn</div>
+              <div key={s.id} style={{border:`1.5px solid ${isBusy?"#fdba74":"#bbf7d0"}`,borderRadius:9,padding:"11px 12px",display:"flex",alignItems:"center",gap:10,background:isBusy?"#fffbeb":"#f0fdf4"}}>
+                <div style={{width:36,height:36,borderRadius:"50%",background:"#fff",color:isBusy?"#c2410c":"#16A34A",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,border:"1px solid #f0f0f0"}}>{inits(s.name)}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#212121",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.name}</div>
+                  <div style={{fontSize:10,color:isBusy?"#c2410c":"#16A34A",fontWeight:600}}>{isBusy?`🛵 ${act.length} đơn đang giao`:"● Sẵn sàng"}</div>
+                  <div style={{fontSize:10,color:"#999"}}>✓ {dn.length} đơn xong</div>
                 </div>
               </div>
             );
           })}
-          {shippers.length===0&&<div style={{color:"#999",fontSize:12,padding:"14px"}}>Chưa có shipper nào đang trực</div>}
+          {shippers.length===0&&<div style={{color:"#999",fontSize:12,padding:"14px"}}>Chưa có shipper nào đang trực trong ca</div>}
         </div>
       </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+        {[
+          {key:"san_sang",  title:"Chờ phân công", items:wait,    color:"#5b21b6"},
+          {key:"da_lay",    title:"Đã lấy hàng",   items:picked,  color:"#854d0e"},
+          {key:"dang_giao", title:"Đang giao",      items:onroute, color:"#c2410c"},
+          {key:"hoan_thanh",title:"Hoàn thành",     items:finished,color:"#15803d"},
+        ].map(col=>(
+          <div key={col.key} className="card" style={{overflow:"hidden"}}>
+            <div style={{padding:"10px 14px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8,background:col.color+"08"}}>
+              <Bdg s={col.key}/><span style={{fontSize:11,color:"#767676"}}>{col.items.length} đơn</span>
+            </div>
+            <div style={{padding:10,display:"flex",flexDirection:"column",gap:8,maxHeight:480,overflowY:"auto"}}>
+              {col.items.map(o=>{
+                let actions = null;
+                if (col.key==="san_sang") {
+                  actions = (
+                    <>
+                      <div style={{fontSize:10,color:"#767676",marginBottom:5,fontWeight:600}}>{canAssign?"Phân công shipper:":"Cần Trưởng ca phân công"}</div>
+                      {canAssign && (
+                        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                          {shippers.map(sh=>{
+                            const busy=orders.some(x=>x.sid===sh.id&&["da_lay","dang_giao"].includes(x.st));
+                            const isCur = o.sid===sh.id;
+                            return (
+                              <button key={sh.id} onClick={()=>assign(o.id,sh.id)}
+                                style={{fontSize:11,padding:"5px 9px",background:isCur?"var(--or)":(busy?"#fff5f5":"#fff"),border:`1px solid ${isCur?"var(--or)":(busy?"#fca5a5":"var(--bd)")}`,borderRadius:5,color:isCur?"#fff":(busy?"#dc2626":"#475569"),cursor:"pointer",fontWeight:600}}>
+                                {sh.name.split(" ").slice(-1)[0]}{busy?" 🔴":""}
+                              </button>
+                            );
+                          })}
+                          {shippers.length===0&&<span style={{fontSize:10,color:"#999"}}>Không có shipper</span>}
+                        </div>
+                      )}
+                    </>
+                  );
+                } else if (col.key==="dang_giao" || col.key==="da_lay") {
+                  actions = (
+                    <div style={{display:"flex",gap:5}}>
+                      <button onClick={()=>setReturnFor(o)} style={{flex:1,fontSize:10,padding:"5px",background:"#fce7f3",border:"none",borderRadius:5,color:"#9d174d",cursor:"pointer",fontWeight:700}}>↩ Hoàn hàng</button>
+                      <button onClick={()=>complete(o.id)} style={{flex:2,fontSize:10,padding:"5px",background:"#15803d",border:"none",borderRadius:5,color:"#fff",cursor:"pointer",fontWeight:700}}>✓ Đã giao</button>
+                    </div>
+                  );
+                }
+                return <ShipperOrderCard key={o.id} o={o} staff={staff} actions={actions}/>;
+              })}
+              {col.items.length===0&&<div style={{textAlign:"center",padding:"24px 0",color:"#999",fontSize:11}}>Trống</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {returned.length>0&&(
+        <div className="card" style={{padding:14,marginTop:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#9d174d",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+            <Bdg s="hoan_hang"/><span>Đơn hoàn hàng ({returned.length})</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:8}}>
+            {returned.map(o=>(
+              <div key={o.id} style={{border:"1px solid #fce7f3",borderRadius:6,padding:"8px 10px",background:"#fff"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                  <span style={{fontFamily:"monospace",fontSize:11,fontWeight:700,color:"#9d174d"}}>{o.id}</span>
+                  <span style={{fontSize:10,color:"#767676"}}>{o.t}</span>
+                </div>
+                <div style={{fontSize:11,color:"#212121",fontWeight:600,marginBottom:2}}>{o.cus}</div>
+                <div style={{fontSize:10,color:"#9d174d",lineHeight:1.4,background:"#fce7f3",padding:"4px 6px",borderRadius:4,marginTop:4}}>↩️ {o.returnReason||"(Không ghi lý do)"}</div>
+                <div style={{fontSize:9,color:"#999",marginTop:3}}>Shipper: {staff.find(x=>x.id===o.sid)?.name||"—"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {returnFor&&<ReturnReasonModal order={returnFor} onClose={()=>setReturnFor(null)} onConfirm={r=>doReturn(returnFor.id,r)}/>}
     </div>
   );
 }
@@ -1535,6 +1756,8 @@ function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shif
 function ShiftSettings({shifts,setShifts,shiftAssignments,upsertAssignment,deleteAssignment,staff,toast}){
   const [addShift,setAddShift] = useState(false);
   const [sf,setSf] = useState({name:"",start_at:"",end_at:""});
+  const [pickerFor,setPickerFor] = useState(null);   // {shift_id}
+  const [view,setView] = useState("calendar");        // calendar | matrix
 
   const submitShift = () => {
     if (!sf.name.trim()) { toast("Nhập tên ca","warn"); return; }
@@ -1556,6 +1779,7 @@ function ShiftSettings({shifts,setShifts,shiftAssignments,upsertAssignment,delet
     const a = shiftAssignments.find(x=>x.shift_id===shift_id && x.staff_id===staff_id);
     return a ? a.role : "off";
   };
+  const assignmentsOf = shift_id => shiftAssignments.filter(a=>a.shift_id===shift_id && a.role!=="off");
 
   const ROLE_OPTS = [
     {v:"off",       l:"😴 Nghỉ",         c:"#999",       bg:"#fafafa"},
@@ -1565,6 +1789,10 @@ function ShiftSettings({shifts,setShifts,shiftAssignments,upsertAssignment,delet
     {v:"shipper",   l:"Shipper",         c:"#16A34A",    bg:"#F0FDF4"},
     {v:"admin",     l:"Admin",           c:"#7C3AED",    bg:"#F5F3FF"},
   ];
+  const ROLE_NON_OFF = ROLE_OPTS.filter(o=>o.v!=="off");
+  const optByVal = v => ROLE_OPTS.find(o=>o.v===v) || ROLE_OPTS[0];
+
+  const sortedShifts = [...shifts].sort((a,b)=>(a.sort||0)-(b.sort||0));
 
   return (
     <>
@@ -1630,58 +1858,160 @@ function ShiftSettings({shifts,setShifts,shiftAssignments,upsertAssignment,delet
         </div>
       </div>
 
-      {/* Ma trận phân công */}
+      {/* Toggle view */}
       <div className="card" style={{padding:14}}>
-        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>Phân công role theo ca</div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5,minWidth:600}}>
-            <thead>
-              <tr>
-                <th style={{padding:"8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px",position:"sticky",left:0,background:"#fff",zIndex:1}}>Nhân sự</th>
-                {[...shifts].sort((a,b)=>(a.sort||0)-(b.sort||0)).map(sh=>(
-                  <th key={sh.id} style={{padding:"8px",textAlign:"center",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",minWidth:140}}>
-                    {sh.name}<br/><span style={{fontWeight:400,color:"#ccc"}}>{sh.start_at}–{sh.end_at}</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {staff.filter(s=>s.active).map(s=>{
-                const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
-                return (
-                  <tr key={s.id} style={{borderBottom:"1px solid #f8f8f8"}}>
-                    <td style={{padding:"9px 8px",position:"sticky",left:0,background:"#fff",zIndex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <div style={{width:28,height:28,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{inits(s.name)}</div>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:700,color:"#212121"}}>{s.name}</div>
-                          <div style={{fontSize:9.5,color:tc,fontWeight:600}}>Mặc định: {RL[s.role]}</div>
-                        </div>
-                      </div>
-                    </td>
-                    {[...shifts].sort((a,b)=>(a.sort||0)-(b.sort||0)).map(sh=>{
-                      const role = getRole(sh.id, s.id);
-                      const opt = ROLE_OPTS.find(o=>o.v===role) || ROLE_OPTS[0];
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>📅 Lịch chia ca trong ngày</div>
+          <div style={{display:"flex",gap:4,background:"#f5f5f5",borderRadius:6,padding:3}}>
+            <button onClick={()=>setView("calendar")}
+              style={{fontSize:11,padding:"6px 12px",border:"none",borderRadius:5,cursor:"pointer",background:view==="calendar"?"#fff":"transparent",color:view==="calendar"?"var(--or)":"#767676",fontWeight:700,boxShadow:view==="calendar"?"0 1px 3px rgba(0,0,0,.08)":"none"}}>📅 Calendar</button>
+            <button onClick={()=>setView("matrix")}
+              style={{fontSize:11,padding:"6px 12px",border:"none",borderRadius:5,cursor:"pointer",background:view==="matrix"?"#fff":"transparent",color:view==="matrix"?"var(--or)":"#767676",fontWeight:700,boxShadow:view==="matrix"?"0 1px 3px rgba(0,0,0,.08)":"none"}}>📊 Ma trận</button>
+          </div>
+        </div>
+
+        {/* CALENDAR VIEW — mỗi card là 1 ca */}
+        {view==="calendar"&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+            {sortedShifts.map(sh=>{
+              const assigns = assignmentsOf(sh.id);
+              const unassigned = staff.filter(s=>s.active && !assigns.find(a=>a.staff_id===s.id));
+              const isPickerHere = pickerFor===sh.id;
+              return (
+                <div key={sh.id} style={{border:"1.5px solid var(--bd)",borderRadius:10,padding:0,overflow:"hidden",background:"#fff",display:"flex",flexDirection:"column"}}>
+                  <div style={{padding:"10px 12px",background:"linear-gradient(135deg,#EE4D2D 0%,#FF8557 100%)",color:"#fff"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <input value={sh.name} onChange={e=>updateShift(sh,"name",e.target.value)}
+                        style={{fontSize:14,fontWeight:800,background:"transparent",border:"none",color:"#fff",padding:0,outline:"none",width:"60%"}}/>
+                      <button onClick={()=>removeShift(sh)} title="Xoá ca"
+                        style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:4,color:"#fff",cursor:"pointer",fontSize:11,padding:"3px 7px"}}>✕</button>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5,fontSize:11,opacity:.95}}>
+                      <input type="time" value={sh.start_at} onChange={e=>updateShift(sh,"start_at",e.target.value)}
+                        style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:4,padding:"2px 6px",color:"#fff",fontSize:11,colorScheme:"dark"}}/>
+                      <span>→</span>
+                      <input type="time" value={sh.end_at} onChange={e=>updateShift(sh,"end_at",e.target.value)}
+                        style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:4,padding:"2px 6px",color:"#fff",fontSize:11,colorScheme:"dark"}}/>
+                      <span style={{marginLeft:"auto",fontSize:10,background:"rgba(0,0,0,.2)",padding:"2px 7px",borderRadius:10}}>{assigns.length} người</span>
+                    </div>
+                  </div>
+
+                  <div style={{padding:10,display:"flex",flexDirection:"column",gap:6,minHeight:60}}>
+                    {assigns.length===0&&(
+                      <div style={{padding:"14px 0",textAlign:"center",color:"#bbb",fontSize:11}}>Chưa phân ai vào ca này</div>
+                    )}
+                    {assigns.map(a=>{
+                      const s = staff.find(x=>x.id===a.staff_id);
+                      if (!s) return null;
+                      const opt = optByVal(a.role);
                       return (
-                        <td key={sh.id} style={{padding:"9px 8px",textAlign:"center"}}>
-                          <select value={role} onChange={e=>upsertAssignment(sh.id,s.id,e.target.value)}
-                            style={{fontSize:11,padding:"5px 8px",border:`1.5px solid ${opt.bg==="#fafafa"?"#e0e0e0":opt.c+"40"}`,borderRadius:5,background:opt.bg,color:opt.c,fontWeight:700,cursor:"pointer",minWidth:115}}>
-                            {ROLE_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                        <div key={a.staff_id} style={{display:"flex",alignItems:"center",gap:7,padding:"5px 8px",border:"1px solid #f0f0f0",borderRadius:6,background:"#fafafa"}}>
+                          <div style={{width:26,height:26,borderRadius:"50%",background:opt.bg,color:opt.c,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9.5,fontWeight:800,flexShrink:0}}>{inits(s.name)}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:11.5,fontWeight:600,color:"#212121",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.name}</div>
+                          </div>
+                          <select value={a.role} onChange={e=>upsertAssignment(sh.id,s.id,e.target.value)}
+                            style={{fontSize:10,padding:"3px 6px",border:`1px solid ${opt.c}40`,borderRadius:4,background:opt.bg,color:opt.c,fontWeight:700,cursor:"pointer"}}>
+                            {ROLE_NON_OFF.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
                           </select>
-                        </td>
+                          <button onClick={()=>upsertAssignment(sh.id,s.id,"off")} title="Bỏ khỏi ca"
+                            style={{background:"none",border:"none",color:"#999",cursor:"pointer",fontSize:14,padding:0}}>✕</button>
+                        </div>
                       );
                     })}
-                  </tr>
-                );
-              })}
-              {staff.filter(s=>s.active).length===0 && (
-                <tr><td colSpan={shifts.length+1} style={{padding:"20px",textAlign:"center",color:"#999",fontSize:12}}>Chưa có nhân sự đang hoạt động</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div style={{marginTop:10,fontSize:10,color:"#767676",lineHeight:1.6}}>
-          💡 Mỗi thay đổi tự lưu lên cloud. Khi đến giờ ca mới, role của user sẽ tự cập nhật trên mọi thiết bị.
+                  </div>
+
+                  <div style={{padding:"6px 10px 10px",borderTop:"1px dashed #f0f0f0"}}>
+                    {!isPickerHere ? (
+                      <button onClick={()=>setPickerFor(sh.id)} disabled={unassigned.length===0}
+                        style={{width:"100%",padding:"7px",border:"1px dashed var(--bd)",borderRadius:6,background:"#fff",cursor:unassigned.length===0?"not-allowed":"pointer",color:unassigned.length===0?"#ccc":"var(--or)",fontSize:11,fontWeight:700}}>
+                        {unassigned.length===0?"Đã phân hết nhân sự":"+ Thêm nhân sự vào ca"}
+                      </button>
+                    ) : (
+                      <div style={{background:"#FFF4F0",border:"1px solid #FFD4C2",borderRadius:6,padding:8}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                          <div style={{fontSize:10,color:"#767676",fontWeight:700}}>Chọn nhân sự & role:</div>
+                          <button onClick={()=>setPickerFor(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#999",fontSize:14}}>✕</button>
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
+                          {unassigned.map(s=>{
+                            const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+                            return (
+                              <div key={s.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 6px",background:"#fff",borderRadius:5}}>
+                                <div style={{width:24,height:24,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,flexShrink:0}}>{inits(s.name)}</div>
+                                <span style={{flex:1,fontSize:11,color:"#212121",fontWeight:600,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.name}</span>
+                                <select onChange={e=>{if(e.target.value){upsertAssignment(sh.id,s.id,e.target.value);setPickerFor(null);}}}
+                                  defaultValue=""
+                                  style={{fontSize:10,padding:"3px 6px",border:"1px solid var(--bd)",borderRadius:4,cursor:"pointer"}}>
+                                  <option value="" disabled>Chọn role…</option>
+                                  {ROLE_NON_OFF.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                                </select>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* MATRIX VIEW — bảng nhân sự × ca */}
+        {view==="matrix"&&(
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5,minWidth:600}}>
+              <thead>
+                <tr>
+                  <th style={{padding:"8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px",position:"sticky",left:0,background:"#fff",zIndex:1,minWidth:140}}>Nhân sự</th>
+                  {sortedShifts.map(sh=>(
+                    <th key={sh.id} style={{padding:"8px",textAlign:"center",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",minWidth:130}}>
+                      {sh.name}<br/><span style={{fontWeight:400,color:"#ccc"}}>{sh.start_at}–{sh.end_at}</span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {staff.filter(s=>s.active).map(s=>{
+                  const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+                  return (
+                    <tr key={s.id} style={{borderBottom:"1px solid #f8f8f8"}}>
+                      <td style={{padding:"9px 8px",position:"sticky",left:0,background:"#fff",zIndex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{width:28,height:28,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{inits(s.name)}</div>
+                          <div>
+                            <div style={{fontSize:12,fontWeight:700,color:"#212121"}}>{s.name}</div>
+                            <div style={{fontSize:9.5,color:tc,fontWeight:600}}>Mặc định: {RL[s.role]}</div>
+                          </div>
+                        </div>
+                      </td>
+                      {sortedShifts.map(sh=>{
+                        const role = getRole(sh.id, s.id);
+                        const opt = optByVal(role);
+                        return (
+                          <td key={sh.id} style={{padding:"9px 8px",textAlign:"center"}}>
+                            <select value={role} onChange={e=>upsertAssignment(sh.id,s.id,e.target.value)}
+                              style={{fontSize:11,padding:"5px 8px",border:`1.5px solid ${opt.bg==="#fafafa"?"#e0e0e0":opt.c+"40"}`,borderRadius:5,background:opt.bg,color:opt.c,fontWeight:700,cursor:"pointer",minWidth:110}}>
+                              {ROLE_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                            </select>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {staff.filter(s=>s.active).length===0 && (
+                  <tr><td colSpan={shifts.length+1} style={{padding:"20px",textAlign:"center",color:"#999",fontSize:12}}>Chưa có nhân sự đang hoạt động</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{marginTop:12,padding:"10px 12px",background:"#fafafa",borderRadius:6,fontSize:10.5,color:"#767676",lineHeight:1.6}}>
+          💡 Mỗi thay đổi tự lưu lên cloud. Khi đến giờ ca mới, role của user sẽ tự cập nhật trên mọi thiết bị. Bấm <b>Calendar</b> để xem dạng card, <b>Ma trận</b> để gán nhanh.
         </div>
       </div>
     </>
@@ -2180,6 +2510,7 @@ function App(){
   const categoriesRef = useRef([]);
   const shiftsRef     = useRef([]);
   const effectiveRoleRef = useRef("off");
+  const currentUserRef   = useRef(null);
   const notifEnabledRef  = useRef(notifEnabled);
 
   const toast=useCallback((msg,type="info")=>{
@@ -2269,6 +2600,13 @@ function App(){
   },[]);
   /* Composite key — không dùng diff wrapper, gọi DB trực tiếp + optimistic update */
   const upsertAssignment = useCallback(async (shift_id, staff_id, role) => {
+    // Role "off" = xoá phân công khỏi ca (không lưu rỗng vào DB)
+    if (role === "off") {
+      _setShiftAssignments(prev=>prev.filter(x=>!(x.shift_id===shift_id && x.staff_id===staff_id)));
+      const {error} = await sb.from("shift_assignments").delete().match({shift_id,staff_id});
+      if (error) toast(`Lỗi xoá phân ca: ${error.message}`,"error");
+      return;
+    }
     _setShiftAssignments(prev=>{
       const ex = prev.find(x=>x.shift_id===shift_id && x.staff_id===staff_id);
       return ex
@@ -2430,9 +2768,15 @@ function App(){
             notify(`🆕 Đơn mới ${orderId(r.num)}`, `${r.cus} — ${itemCount} món`);
           }
         } else if (p.eventType === "UPDATE") {
-          // Đơn sẵn sàng + cần ship → báo shipper
-          if (r.st === "san_sang" && r.type === "ship" && (role === "shipper" || role === "truong_ca")) {
-            notify(`📦 Đơn cần giao ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
+          const old = p.old || {};
+          // Đơn sẵn sàng ship → báo trưởng ca biết để phân công
+          if (r.st === "san_sang" && r.type === "ship" && old.st !== "san_sang" && (role === "truong_ca" || role === "admin")) {
+            notify(`📦 Đơn cần phân shipper ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
+          }
+          // Shipper bị gán đơn (sid thay đổi sang chính họ) → báo riêng cho shipper đó
+          const uid = currentUserRef.current?.id;
+          if (role === "shipper" && r.sid === uid && old.sid !== uid) {
+            notify(`🛵 Bạn vừa được giao đơn ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
           }
         }
         mergeOrder(r);
@@ -2524,7 +2868,7 @@ function App(){
   // Tính ca hiện tại sớm để SCREENS dùng được (dù chưa có currentUser)
   const currentShift = getCurrentShift(shifts);
   const effectiveRoleEarly = getEffectiveRole(currentShift, shiftAssignments, currentUser);
-  if (currentUser) effectiveRoleRef.current = effectiveRoleEarly;
+  if (currentUser) { effectiveRoleRef.current = effectiveRoleEarly; currentUserRef.current = currentUser; }
 
   const SCREENS={
     dashboard:{title:"Tổng quan",       sub:`${currentShift?currentShift.name+" · "+currentShift.start_at+"–"+currentShift.end_at:"Ngoài giờ làm việc"} · ${shiftAssignments.filter(a=>a.shift_id===currentShift?.id && a.role!=="off").length} thành viên trong ca`,
@@ -2534,7 +2878,7 @@ function App(){
     kitchen:  {title:"Pha chế (KDS)",    sub:"Kitchen Display System · Realtime",
                comp:<KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} toast={toast}/>},
     shipper:  {title:"Giao hàng",        sub:"Quản lý shipper & vận chuyển",
-               comp:<ShipperScreen orders={orders} setOrders={setOrders} staff={staff} toast={toast}/>},
+               comp:<ShipperScreen orders={orders} setOrders={setOrders} staff={staff} currentUser={currentUser} effectiveRole={effectiveRole} toast={toast}/>},
     staff:    {title:"Nhân sự & KPI",    sub:"Phân công · Theo dõi KPI · Bảng xếp hạng",
                comp:<StaffScreen orders={orders} staff={staff}/>},
     report:   {title:"Báo cáo & Log",    sub:"Tổng kết cuối ca · Xuất dữ liệu CSV",
