@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CLB Quản Lý Bán Hàng v1.3</title>
+<title>CLB Quản Lý Bán Hàng v1.3.1</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -100,13 +100,16 @@ button:not(:disabled):active{transform:translateY(1px)}
 @media (max-width:768px){
   .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:200;transform:translateX(-100%);box-shadow:2px 0 16px rgba(0,0,0,.15)}
   .sidebar.open{transform:translateX(0)}
-  .sb-overlay{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150}
+  .sb-overlay{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(2px);z-index:150}
   .mobile-only{display:flex}
   .desktop-only{display:none}
   .order-shell{flex-direction:column}
-  .order-left{border-right:none;border-bottom:1px solid var(--bd);max-height:none}
-  .order-right{width:100%;max-height:46vh;border-top:1px solid var(--bd);flex-shrink:0}
+  .order-left{border-right:none;border-bottom:1px solid var(--bd);max-height:none;flex:1;min-height:0}
+  .order-right{width:100%;max-height:50vh;border-top:1px solid var(--bd);flex-shrink:0}
   .topbar-meta{display:none}
+  /* KDS kanban scroll ngang trên mobile */
+  .kds-shell{overflow-x:auto!important}
+  .kds-shell > div{min-width:280px;flex:0 0 80%!important}
 }
 @media (max-width:480px){
   .grid-stats-4{grid-template-columns:repeat(2,1fr)!important}
@@ -228,7 +231,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.3.0";
+const VERSION = "1.3.1";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -379,43 +382,51 @@ function LoginScreen({staff,onLogin}){
     return ()=>window.removeEventListener("keydown",h);
   },[pin]);
 
+  const numBtn = {padding:"18px 0",fontSize:24,fontWeight:600,background:"#FAFAFA",border:"1px solid #F0F0F0",borderRadius:"var(--r-md)",cursor:"pointer",color:"var(--text)",transition:"all .12s var(--ease)",userSelect:"none"};
+  const auxBtn = {padding:"18px 0",fontSize:14,fontWeight:600,background:"#fff",border:"1px solid #F0F0F0",borderRadius:"var(--r-md)",cursor:"pointer",color:"var(--mut)",transition:"all .12s var(--ease)"};
+
   return (
-    <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"linear-gradient(135deg,#FFF4F0 0%,#FFE4D8 100%)",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
-      <div style={{width:"100%",maxWidth:380,background:"#fff",borderRadius:16,padding:"28px 24px",boxShadow:"0 8px 40px rgba(238,77,45,.18)",animation:shake?"shake .4s":"fadeUp .3s"}}>
-        <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{width:60,height:60,borderRadius:14,background:"var(--or)",color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:12}}>🛒</div>
-          <div style={{fontSize:18,fontWeight:800,color:"var(--or)",letterSpacing:".5px"}}>CLB BÁN HÀNG</div>
-          <div style={{fontSize:11,color:"#999",marginTop:2}}>v{VERSION} · Nhập mã PIN để bắt đầu</div>
+    <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"linear-gradient(135deg,#FFE4D8 0%,#FFF4F0 50%,#FFEDE5 100%)",position:"relative",overflow:"hidden",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+      <div style={{position:"absolute",top:-80,left:-80,width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(238,77,45,.18) 0%,transparent 70%)"}}/>
+      <div style={{position:"absolute",bottom:-100,right:-100,width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(238,77,45,.14) 0%,transparent 70%)"}}/>
+      <div className={shake?"shake":"fade-up"} style={{width:"100%",maxWidth:400,background:"rgba(255,255,255,.92)",backdropFilter:"blur(16px)",borderRadius:20,padding:"32px 26px",boxShadow:"0 16px 60px rgba(238,77,45,.22),0 4px 16px rgba(0,0,0,.06)",border:"1px solid rgba(255,255,255,.6)",position:"relative",zIndex:1}}>
+        <div style={{textAlign:"center",marginBottom:22}}>
+          <div style={{width:68,height:68,borderRadius:18,background:"var(--or-grad)",color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:32,marginBottom:14,boxShadow:"var(--sh-or)"}}>🛒</div>
+          <div style={{fontSize:19,fontWeight:800,color:"var(--or)",letterSpacing:.6}}>CLB BÁN HÀNG</div>
+          <div style={{fontSize:11.5,color:"var(--mut)",marginTop:3}}>v{VERSION} · Nhập mã PIN để bắt đầu</div>
         </div>
 
-        <div style={{display:"flex",gap:10,justifyContent:"center",marginBottom:err?6:18}}>
-          {[0,1,2,3].map(i=>(
-            <div key={i} style={{width:46,height:54,border:`2px solid ${pin.length>i?"var(--or)":"#E8E8E8"}`,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800,color:"var(--or)",background:pin.length>i?"#FFF4F0":"#fff",transition:"all .15s"}}>
-              {pin.length>i?"●":""}
-            </div>
-          ))}
+        <div style={{display:"flex",gap:11,justifyContent:"center",marginBottom:err?6:20}}>
+          {[0,1,2,3].map(i=>{
+            const filled=pin.length>i;
+            return (
+              <div key={i} className={filled?"pop":""} style={{width:50,height:58,border:`2px solid ${filled?"var(--or)":"#E8E8E8"}`,borderRadius:"var(--r-md)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:800,color:"var(--or)",background:filled?"var(--orl)":"#fff",transition:"all .18s var(--ease)",boxShadow:filled?"var(--sh-or)":"none"}}>
+                {filled?"●":""}
+              </div>
+            );
+          })}
         </div>
-        {err&&<div style={{textAlign:"center",fontSize:11,color:"#b91c1c",marginBottom:14,fontWeight:600}}>{err}</div>}
+        {err&&<div style={{textAlign:"center",fontSize:12,color:"var(--err)",marginBottom:14,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:5}}><i className="ti ti-alert-circle"/>{err}</div>}
 
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:9}}>
           {[1,2,3,4,5,6,7,8,9].map(n=>(
-            <button key={n} onClick={()=>press(String(n))}
-              style={{padding:"16px",fontSize:22,fontWeight:600,background:"#FAFAFA",border:"1px solid #f0f0f0",borderRadius:10,cursor:"pointer",color:"#212121",transition:"all .1s"}}
-              onMouseDown={e=>e.currentTarget.style.background="#FFF4F0"}
-              onMouseUp={e=>e.currentTarget.style.background="#FAFAFA"}
-              onMouseLeave={e=>e.currentTarget.style.background="#FAFAFA"}>{n}</button>
+            <button key={n} onClick={()=>press(String(n))} style={numBtn}
+              onMouseDown={e=>{e.currentTarget.style.background="var(--orl)";e.currentTarget.style.color="var(--or)";e.currentTarget.style.borderColor="var(--or)"}}
+              onMouseUp={e=>{e.currentTarget.style.background="#FAFAFA";e.currentTarget.style.color="var(--text)";e.currentTarget.style.borderColor="#F0F0F0"}}
+              onMouseLeave={e=>{e.currentTarget.style.background="#FAFAFA";e.currentTarget.style.color="var(--text)";e.currentTarget.style.borderColor="#F0F0F0"}}>{n}</button>
           ))}
-          <button onClick={clear} style={{padding:"16px",fontSize:13,fontWeight:600,background:"#fff",border:"1px solid #f0f0f0",borderRadius:10,cursor:"pointer",color:"#767676"}}>Xoá</button>
-          <button onClick={()=>press("0")}
-            style={{padding:"16px",fontSize:22,fontWeight:600,background:"#FAFAFA",border:"1px solid #f0f0f0",borderRadius:10,cursor:"pointer",color:"#212121"}}>0</button>
-          <button onClick={back} style={{padding:"16px",fontSize:18,background:"#fff",border:"1px solid #f0f0f0",borderRadius:10,cursor:"pointer",color:"#767676"}}>⌫</button>
+          <button onClick={clear} style={auxBtn} title="Xoá hết">Xoá</button>
+          <button onClick={()=>press("0")} style={numBtn}
+            onMouseDown={e=>{e.currentTarget.style.background="var(--orl)";e.currentTarget.style.color="var(--or)";e.currentTarget.style.borderColor="var(--or)"}}
+            onMouseUp={e=>{e.currentTarget.style.background="#FAFAFA";e.currentTarget.style.color="var(--text)";e.currentTarget.style.borderColor="#F0F0F0"}}
+            onMouseLeave={e=>{e.currentTarget.style.background="#FAFAFA";e.currentTarget.style.color="var(--text)";e.currentTarget.style.borderColor="#F0F0F0"}}>0</button>
+          <button onClick={back} style={{...auxBtn,fontSize:18}} title="Xoá 1 ký tự"><i className="ti ti-backspace"/></button>
         </div>
 
-        <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid #f5f5f5",fontSize:10,color:"#999",textAlign:"center",lineHeight:1.6}}>
+        <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid #F5F5F5",fontSize:10.5,color:"var(--mut)",textAlign:"center",lineHeight:1.7}}>
           Mỗi thành viên có 1 mã PIN riêng do quản trị cấp.<br/>Quên PIN? Liên hệ Trưởng ca / Admin.
         </div>
       </div>
-      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}`}</style>
     </div>
   );
 }
@@ -683,47 +694,50 @@ function Sidebar({screen,setScreen,orders,currentShift,allowed,sbOpen,onClose,on
   const roleSwitched = er !== currentUser.role && er !== "admin";
   return (
     <div className={"sidebar "+(sbOpen?"open":"")} style={{background:"#fff",borderRight:"1px solid var(--bd)",display:"flex",flexDirection:"column",height:"100%"}}>
-      <div style={{padding:"16px 16px 12px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:32,height:32,borderRadius:6,background:"var(--or)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800}}>🛒</div>
+      <div style={{padding:"16px 16px 13px",borderBottom:"1px solid var(--bd2)",display:"flex",alignItems:"center",justifyContent:"space-between",background:"linear-gradient(135deg,#fff 0%,#FFFAF7 100%)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          <div style={{width:36,height:36,borderRadius:"var(--r-md)",background:"var(--or-grad)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,boxShadow:"var(--sh-or)"}}>🛒</div>
           <div>
-            <div style={{fontSize:12,fontWeight:800,color:"var(--or)",letterSpacing:".3px"}}>CLB BÁN HÀNG</div>
-            <div style={{fontSize:9,color:"#999"}}>v{VERSION}</div>
+            <div style={{fontSize:12.5,fontWeight:800,color:"var(--or)",letterSpacing:.4}}>CLB BÁN HÀNG</div>
+            <div style={{fontSize:9.5,color:"var(--mut2)"}}>v{VERSION}</div>
           </div>
         </div>
-        <button onClick={onClose} className="mobile-only" style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"#767676",padding:6}}>✕</button>
+        <button onClick={onClose} className="mobile-only" aria-label="Đóng" style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"var(--mut)",padding:6}}>✕</button>
       </div>
-      <div style={{padding:"10px 14px",background:bg,borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:9}}>
-        <div style={{width:34,height:34,borderRadius:"50%",background:"#fff",color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{inits(currentUser.name)}</div>
+      <div style={{padding:"11px 14px",background:bg,borderBottom:"1px solid var(--bd2)",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:38,height:38,borderRadius:"50%",background:"#fff",color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,boxShadow:"var(--sh-sm)"}}>{inits(currentUser.name)}</div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:12.5,color:"#212121",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{currentUser.name}</div>
-          <div style={{fontSize:10,color:tc,fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
+          <div style={{fontSize:13,color:"var(--text)",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{currentUser.name}</div>
+          <div style={{fontSize:10.5,color:tc,fontWeight:700,display:"flex",alignItems:"center",gap:4}}>
             <span>{RL[er]||er}</span>
-            {roleSwitched && <span title={`Mặc định: ${RL[currentUser.role]}`} style={{fontSize:9,padding:"1px 5px",background:"#fff",borderRadius:6,color:"var(--or)",fontWeight:800}}>theo ca</span>}
+            {roleSwitched && <span title={`Mặc định: ${RL[currentUser.role]}`} style={{fontSize:9,padding:"1px 6px",background:"#fff",borderRadius:"var(--r-pill)",color:"var(--or)",fontWeight:800}}>theo ca</span>}
           </div>
         </div>
       </div>
       {currentShift && (
-        <div style={{padding:"7px 14px",background:"#FFF8F4",borderBottom:"1px solid #f0f0f0",fontSize:10.5,color:"#92400e",display:"flex",alignItems:"center",gap:6}}>
-          <i className="ti ti-clock-hour-4" style={{fontSize:13,color:"var(--or)"}}/>
+        <div style={{padding:"8px 14px",background:"linear-gradient(90deg,#FFF4F0 0%,#FFF8F4 100%)",borderBottom:"1px solid var(--bd2)",fontSize:11,color:"#92400e",display:"flex",alignItems:"center",gap:6}}>
+          <i className="ti ti-clock-hour-4" style={{fontSize:14,color:"var(--or)"}}/>
           <span><b>{currentShift.name}</b> · {currentShift.start_at}–{currentShift.end_at}</span>
         </div>
       )}
-      <nav style={{flex:1,padding:"6px 0",overflowY:"auto"}}>
+      <nav style={{flex:1,padding:"8px 8px",overflowY:"auto"}}>
         {nav.map(n=>{
           const ac=screen===n.k;
           return (
             <button key={n.k} onClick={()=>setScreen(n.k)}
-              style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 16px",border:"none",cursor:"pointer",textAlign:"left",fontSize:13,fontWeight:ac?700:500,background:ac?"var(--orl)":"transparent",color:ac?"var(--or)":"#475569",borderLeft:`3px solid ${ac?"var(--or)":"transparent"}`,transition:"background .1s"}}>
-              <i className={`ti ${n.icon}`} style={{fontSize:17}}/>
+              style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"11px 13px",border:"none",cursor:"pointer",textAlign:"left",fontSize:13,fontWeight:ac?700:500,background:ac?"var(--orl)":"transparent",color:ac?"var(--or)":"var(--text2)",borderRadius:"var(--r-md)",marginBottom:2,transition:"all .15s var(--ease)",position:"relative",boxShadow:ac?"var(--sh-sm)":"none"}}
+              onMouseOver={e=>{if(!ac){e.currentTarget.style.background="#FAFAFA";e.currentTarget.style.color="var(--text)"}}}
+              onMouseOut={e=>{if(!ac){e.currentTarget.style.background="transparent";e.currentTarget.style.color="var(--text2)"}}}>
+              {ac&&<span style={{position:"absolute",left:-8,top:"50%",transform:"translateY(-50%)",width:3,height:18,background:"var(--or)",borderRadius:"0 3px 3px 0"}}/>}
+              <i className={`ti ${n.icon}`} style={{fontSize:18}}/>
               <span style={{flex:1}}>{n.label}</span>
-              {n.badge&&<span style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:10,background:"#ef4444",color:"#fff",minWidth:18,textAlign:"center"}}>{n.badge}</span>}
+              {n.badge&&<span style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:"var(--r-pill)",background:"var(--or-grad)",color:"#fff",minWidth:20,textAlign:"center",boxShadow:"var(--sh-or)"}}>{n.badge}</span>}
             </button>
           );
         })}
       </nav>
-      <div style={{padding:"8px 10px",borderTop:"1px solid #f0f0f0"}}>
-        <button onClick={onLogout} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"9px 12px",border:"1px solid #f0f0f0",borderRadius:6,background:"#fff",cursor:"pointer",color:"#b91c1c",fontSize:12,fontWeight:600}}>
+      <div style={{padding:"10px 12px",borderTop:"1px solid var(--bd2)"}}>
+        <button onClick={onLogout} className="btn-ghost" style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",borderRadius:"var(--r-md)",color:"var(--err)",borderColor:"#FCA5A5",fontSize:12.5,fontWeight:600}}>
           <i className="ti ti-logout" style={{fontSize:15}}/>Đăng xuất
         </button>
       </div>
@@ -740,34 +754,36 @@ function TopBar({title,sub,time,currentUser,connStatus,onLogout,onMenu,effective
     offline: {color:"#ef4444",text:"Mất kết nối",pulse:false},
   }[connStatus] || {color:"#94a3b8",text:"—",pulse:false};
   return (
-    <div style={{padding:"10px 16px",borderBottom:"2.5px solid var(--or)",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff",flexShrink:0,gap:10}}>
+    <div style={{padding:"10px 16px",borderBottom:"2.5px solid var(--or)",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff",flexShrink:0,gap:10,boxShadow:"0 2px 8px rgba(0,0,0,.03)"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,flex:1}}>
-        <button onClick={onMenu} className="mobile-only" style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"var(--or)",padding:4}}>
+        <button onClick={onMenu} className="mobile-only" aria-label="Menu" style={{background:"var(--orl)",border:"none",cursor:"pointer",fontSize:22,color:"var(--or)",padding:8,borderRadius:"var(--r-sm)"}}>
           <i className="ti ti-menu-2"/>
         </button>
         <div style={{minWidth:0}}>
-          <div style={{fontSize:15,fontWeight:700,color:"#212121",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
-          <div style={{fontSize:11,color:"#767676",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>
+          <div style={{fontSize:15.5,fontWeight:800,color:"var(--text)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:-.2}}>{title}</div>
+          <div style={{fontSize:11,color:"var(--mut)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-        <div className="topbar-meta" style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#767676"}}>
-          <i className="ti ti-clock" style={{fontSize:13}}/>
-          <span>{time} · {todayS()}</span>
+        <div className="topbar-meta" style={{display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"var(--mut)",padding:"5px 11px",background:"#FAFAFA",borderRadius:"var(--r-pill)",border:"1px solid var(--bd2)"}}>
+          <i className="ti ti-clock" style={{fontSize:13,color:"var(--or)"}}/>
+          <span style={{fontWeight:600,color:"var(--text2)"}}>{time}</span>
+          <span style={{color:"var(--mut2)"}}>·</span>
+          <span>{todayS()}</span>
         </div>
-        <div title={conn.text} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 8px",background:conn.color+"15",borderRadius:12}}>
-          <div style={{width:7,height:7,borderRadius:"50%",background:conn.color,animation:conn.pulse?"pulse 2s infinite":"none"}}/>
-          <span className="hide-mobile" style={{fontSize:10,color:conn.color,fontWeight:700}}>{conn.text}</span>
+        <div title={conn.text} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",background:conn.color+"18",borderRadius:"var(--r-pill)",border:`1px solid ${conn.color}33`}}>
+          <div style={{width:7,height:7,borderRadius:"50%",background:conn.color,animation:conn.pulse?"pulse 2s infinite":"none",boxShadow:`0 0 0 3px ${conn.color}25`}}/>
+          <span className="hide-mobile" style={{fontSize:10.5,color:conn.color,fontWeight:700}}>{conn.text}</span>
         </div>
-        <button onClick={onToggleNotif} title={notifEnabled?"Tắt thông báo":"Bật thông báo"}
-          style={{width:34,height:34,borderRadius:"50%",border:"1px solid var(--bd)",background:notifEnabled?"#FFF4F0":"#fff",color:notifEnabled?"var(--or)":"#999",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <button onClick={onToggleNotif} title={notifEnabled?"Tắt thông báo":"Bật thông báo"} aria-label="Thông báo"
+          style={{width:36,height:36,borderRadius:"50%",border:`1px solid ${notifEnabled?"var(--or)":"var(--bd)"}`,background:notifEnabled?"var(--orl)":"#fff",color:notifEnabled?"var(--or)":"var(--mut2)",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:notifEnabled?"var(--sh-sm)":"none"}}>
           <i className={`ti ${notifEnabled?"ti-bell-ringing":"ti-bell-off"}`}/>
         </button>
-        <div className="hide-mobile" style={{display:"flex",alignItems:"center",gap:7,padding:"4px 10px 4px 4px",background:"#fff",border:"1px solid var(--bd)",borderRadius:24}}>
-          <div style={{width:28,height:28,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{inits(currentUser.name)}</div>
+        <div className="hide-mobile" style={{display:"flex",alignItems:"center",gap:8,padding:"4px 12px 4px 4px",background:"#fff",border:"1px solid var(--bd)",borderRadius:"var(--r-pill)",boxShadow:"var(--sh-sm)"}}>
+          <div style={{width:30,height:30,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{inits(currentUser.name)}</div>
           <div style={{textAlign:"left"}}>
-            <div style={{fontSize:12,fontWeight:700,color:"#212121",lineHeight:1.1}}>{currentUser.name}</div>
-            <div style={{fontSize:9.5,color:tc,fontWeight:700,lineHeight:1.2}}>{RL[er]||er}{currentShift?` · ${currentShift.name}`:""}</div>
+            <div style={{fontSize:12,fontWeight:700,color:"var(--text)",lineHeight:1.15}}>{currentUser.name}</div>
+            <div style={{fontSize:9.5,color:tc,fontWeight:700,lineHeight:1.25}}>{RL[er]||er}{currentShift?` · ${currentShift.name}`:""}</div>
           </div>
         </div>
       </div>
@@ -791,52 +807,61 @@ function Dashboard({orders,staff}){
   const maxB=Math.max(...bars,1);
 
   const cards=[
-    {l:"Tổng đơn",v:orders.length,ic:"ti-clipboard-list",bg:"#FFF4F0",tc:"#EE4D2D"},
-    {l:"Doanh thu",v:fmt(rev),ic:"ti-cash",bg:"#dcfce7",tc:"#15803d"},
-    {l:"Đang xử lý",v:active.length,ic:"ti-loader-2",bg:"#dbeafe",tc:"#1e40af"},
-    {l:"Thu phí ship",v:fmt(ship.reduce((s,o)=>s+o.dFee,0)),ic:"ti-motorbike",bg:"#ede9fe",tc:"#5b21b6"},
+    {l:"Tổng đơn",v:orders.length,ic:"ti-clipboard-list",bg:"var(--orl)",tc:"var(--or)",accent:"linear-gradient(135deg,#FFF4F0 0%,#FFE0D6 100%)"},
+    {l:"Doanh thu",v:fmt(rev),ic:"ti-cash",bg:"var(--ok-bg)",tc:"var(--ok)",accent:"linear-gradient(135deg,#F0FDF4 0%,#DCFCE7 100%)"},
+    {l:"Đang xử lý",v:active.length,ic:"ti-loader-2",bg:"var(--info-bg)",tc:"var(--info)",accent:"linear-gradient(135deg,#EFF6FF 0%,#DBEAFE 100%)"},
+    {l:"Thu phí ship",v:fmt(ship.reduce((s,o)=>s+o.dFee,0)),ic:"ti-motorbike",bg:"#F3EFFF",tc:"#7C3AED",accent:"linear-gradient(135deg,#F5F3FF 0%,#EDE9FE 100%)"},
   ];
 
   return (
     <div style={{flex:1,overflowY:"auto",padding:18,background:"var(--bg)"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}}>
+      <div className="grid-stats-4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}}>
         {cards.map(s=>(
-          <div key={s.l} className="card" style={{padding:"14px 16px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-              <div style={{fontSize:11,color:"#767676"}}>{s.l}</div>
-              <div style={{width:34,height:34,borderRadius:8,background:s.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <i className={`ti ${s.ic}`} style={{fontSize:17,color:s.tc}}/>
+          <div key={s.l} className="card card-hover" style={{padding:"16px 16px 14px",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,right:0,width:80,height:80,background:s.accent,borderRadius:"0 0 0 100%",opacity:.55}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,position:"relative"}}>
+              <div style={{fontSize:11,color:"var(--mut)",fontWeight:600,textTransform:"uppercase",letterSpacing:.3}}>{s.l}</div>
+              <div style={{width:36,height:36,borderRadius:"var(--r-md)",background:s.bg,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"var(--sh-sm)"}}>
+                <i className={`ti ${s.ic}`} style={{fontSize:19,color:s.tc}}/>
               </div>
             </div>
-            <div style={{fontSize:22,fontWeight:800,color:"#212121"}}>{s.v}</div>
+            <div style={{fontSize:24,fontWeight:800,color:"var(--text)",position:"relative",letterSpacing:-.3}}>{s.v}</div>
           </div>
         ))}
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:12,marginBottom:12}}>
         <div className="card" style={{padding:18}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:14}}>Đơn hàng theo giờ</div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:10,height:110}}>
-            {bars.map((v,i)=>(
-              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-                <div style={{fontSize:10,color:"#999",fontWeight:600}}>{v}</div>
-                <div style={{width:"100%",height:Math.round((v/maxB)*88)||3,background:i===bars.length-1?"var(--or)":"#FFD4C2",borderRadius:"4px 4px 0 0",transition:"height .5s"}}/>
-                <div style={{fontSize:10,color:"#999"}}>{7+i}h</div>
-              </div>
-            ))}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:700,color:"var(--text)",display:"flex",alignItems:"center",gap:6}}><i className="ti ti-chart-bar" style={{fontSize:16,color:"var(--or)"}}/>Đơn hàng theo giờ</div>
+            <span className="chip">8 khung giờ</span>
+          </div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:10,height:130,paddingBottom:4}}>
+            {bars.map((v,i)=>{
+              const hCur=new Date().getHours();
+              const isCur=(7+i)===hCur;
+              return (
+                <div key={i} title={`${7+i}:00 — ${v} đơn`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,cursor:"default"}}>
+                  <div style={{fontSize:10.5,color:isCur?"var(--or)":"var(--mut)",fontWeight:700}}>{v||""}</div>
+                  <div style={{width:"100%",height:Math.round((v/maxB)*92)||3,background:isCur?"var(--or-grad)":"linear-gradient(180deg,#FFD4C2 0%,#FFB8A0 100%)",borderRadius:"6px 6px 2px 2px",transition:"height .6s var(--ease)",boxShadow:isCur?"var(--sh-or)":"none"}}/>
+                  <div style={{fontSize:10,color:isCur?"var(--or)":"var(--mut2)",fontWeight:isCur?700:500}}>{7+i}h</div>
+                </div>
+              );
+            })}
           </div>
         </div>
         <div className="card" style={{padding:18}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:12}}>Trạng thái đơn</div>
+          <div style={{fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:14,display:"flex",alignItems:"center",gap:6}}><i className="ti ti-progress" style={{fontSize:16,color:"var(--or)"}}/>Trạng thái đơn</div>
           {Object.entries(ST).map(([s,d])=>{
             const n=orders.filter(o=>o.st===s).length;
+            const pct=orders.length?Math.round((n/orders.length)*100):0;
             return (
-              <div key={s} style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
-                <div style={{minWidth:84}}><Bdg s={s}/></div>
-                <div style={{flex:1,height:5,background:"#f5f5f5",borderRadius:3}}>
-                  <div style={{height:"100%",width:orders.length?`${Math.round((n/orders.length)*100)}%`:"0%",background:d.color,borderRadius:3,transition:"width .5s"}}/>
+              <div key={s} style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <div style={{minWidth:88}}><Bdg s={s}/></div>
+                <div style={{flex:1,height:6,background:"#F3F4F6",borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:d.color,borderRadius:3,transition:"width .6s var(--ease)"}}/>
                 </div>
-                <span style={{fontSize:11,color:"#475569",minWidth:18,textAlign:"right",fontWeight:700}}>{n}</span>
+                <span style={{fontSize:11,color:"var(--text2)",minWidth:22,textAlign:"right",fontWeight:700}}>{n}</span>
               </div>
             );
           })}
@@ -844,27 +869,35 @@ function Dashboard({orders,staff}){
       </div>
 
       <div className="card" style={{padding:18}}>
-        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:12}}>Đơn hàng gần đây</div>
+        <div style={{fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}><i className="ti ti-history" style={{fontSize:16,color:"var(--or)"}}/>Đơn hàng gần đây</div>
         <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
           <thead>
-            <tr>{["Mã đơn","Khách hàng","Giờ","Sản phẩm","Tổng","Loại","Người KPI","Trạng thái"].map(h=>(
-              <th key={h} style={{padding:"7px 8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px"}}>{h}</th>
+            <tr style={{background:"#FAFAFA"}}>{["Mã đơn","Khách hàng","Giờ","Sản phẩm","Tổng","Loại","Người KPI","Trạng thái"].map(h=>(
+              <th key={h} style={{padding:"9px 10px",textAlign:"left",fontSize:10,color:"var(--mut)",fontWeight:700,borderBottom:"1px solid var(--bd)",letterSpacing:.4,textTransform:"uppercase"}}>{h}</th>
             ))}</tr>
           </thead>
           <tbody>
             {[...orders].reverse().slice(0,6).map(o=>(
-              <tr key={o.id} style={{borderBottom:"1px solid #f8f8f8"}}>
-                <td style={{padding:"8px",fontFamily:"monospace",color:"var(--or)",fontWeight:700}}>{o.id}</td>
-                <td style={{padding:"8px",color:"#212121",fontWeight:600}}>{o.cus}</td>
-                <td style={{padding:"8px",color:"#767676"}}>{o.t}</td>
-                <td style={{padding:"8px",color:"#475569",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</td>
-                <td style={{padding:"8px",fontWeight:700}}>{fmt(iTot(o))}</td>
-                <td style={{padding:"8px"}}><TPill type={o.type}/></td>
-                <td style={{padding:"8px",color:"#475569",fontSize:10.5}}>{staff.find(s=>s.id===o.kpi)?.name||"—"}</td>
-                <td style={{padding:"8px"}}><Bdg s={o.st}/></td>
+              <tr key={o.id} style={{borderBottom:"1px solid #F5F5F5",transition:"background .15s"}}
+                  onMouseOver={e=>e.currentTarget.style.background="#FAFAFA"}
+                  onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                <td style={{padding:"10px",fontFamily:"ui-monospace,monospace",color:"var(--or)",fontWeight:800}}>{o.id}</td>
+                <td style={{padding:"10px",color:"var(--text)",fontWeight:600}}>{o.cus}</td>
+                <td style={{padding:"10px",color:"var(--mut)"}}>{o.t}</td>
+                <td style={{padding:"10px",color:"var(--text2)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</td>
+                <td style={{padding:"10px",fontWeight:800,color:"var(--text)"}}>{fmt(iTot(o))}</td>
+                <td style={{padding:"10px"}}><TPill type={o.type}/></td>
+                <td style={{padding:"10px",color:"var(--text2)",fontSize:11}}>{staff.find(s=>s.id===o.kpi)?.name||"—"}</td>
+                <td style={{padding:"10px"}}><Bdg s={o.st}/></td>
               </tr>
             ))}
+            {orders.length===0&&(
+              <tr><td colSpan={8} style={{padding:"32px 10px",textAlign:"center",color:"var(--mut2)",fontSize:12}}>
+                <i className="ti ti-clipboard-off" style={{fontSize:32,display:"block",marginBottom:6,opacity:.5}}/>
+                Chưa có đơn hàng nào
+              </td></tr>
+            )}
           </tbody>
         </table>
         </div>
@@ -931,8 +964,9 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
   return (
     <div className="order-shell">
       <div className="order-left">
+        <div className="order-scroll" style={{flex:1,minHeight:0,overflowY:"auto",display:"flex",flexDirection:"column"}}>
 
-        <div style={{padding:"12px 14px 10px",borderBottom:"1px solid var(--bd2)",flexShrink:0,maxHeight:"42vh",overflowY:"auto",background:"linear-gradient(180deg,#fff 0%,#FAFAFA 100%)"}}>
+        <div style={{padding:"12px 14px 10px",borderBottom:"1px solid var(--bd2)",flexShrink:0,background:"linear-gradient(180deg,#fff 0%,#FAFAFA 100%)"}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 130px",gap:8,marginBottom:9}}>
             <div>
               <div style={lbl}>Khách hàng *</div>
@@ -989,7 +1023,7 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
           )}
         </div>
 
-        <div style={{padding:"10px 14px 8px",borderBottom:"1px solid var(--bd2)",flexShrink:0,background:"#fff"}}>
+        <div style={{padding:"10px 14px 8px",borderBottom:"1px solid var(--bd2)",flexShrink:0,background:"#fff",position:"sticky",top:0,zIndex:5,boxShadow:"0 2px 4px rgba(0,0,0,.03)"}}>
           <div style={{position:"relative",marginBottom:8}}>
             <i className="ti ti-search" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"var(--mut2)",fontSize:14,pointerEvents:"none"}}/>
             <input value={search} onChange={e=>setSrch(e.target.value)} placeholder="Tìm sản phẩm..."
@@ -1004,7 +1038,7 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
           </div>
         </div>
 
-        <div style={{flex:1,overflowY:"auto",padding:"12px 14px",minHeight:140,background:"var(--bg)"}}>
+        <div style={{flexShrink:0,padding:"12px 14px",background:"var(--bg)"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
             {filtered.map(p=>{
               const q=cqty(p.id);
@@ -1033,15 +1067,15 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
           </div>
         </div>
 
-        <div style={{borderTop:"1px solid var(--bd)",background:"#fff",display:"flex",flexDirection:"column",flexShrink:0,maxHeight:"42vh",boxShadow:"0 -2px 8px rgba(0,0,0,.03)"}}>
-          <div style={{padding:"8px 14px 4px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid var(--bd2)"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"var(--text)",display:"flex",alignItems:"center",gap:6}}>
-              <i className="ti ti-shopping-cart" style={{fontSize:14,color:"var(--or)"}}/>Giỏ hàng
+        <div style={{borderTop:"1px solid var(--bd)",background:"#fff",display:"flex",flexDirection:"column",flexShrink:0,boxShadow:"0 -2px 8px rgba(0,0,0,.03)"}}>
+          <div style={{padding:"10px 14px 6px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid var(--bd2)",position:"sticky",top:0,background:"#fff",zIndex:4}}>
+            <div style={{fontSize:12,fontWeight:700,color:"var(--text)",display:"flex",alignItems:"center",gap:6}}>
+              <i className="ti ti-shopping-cart" style={{fontSize:15,color:"var(--or)"}}/>Giỏ hàng
               {itemCount>0&&<span className="chip chip-or pop" style={{fontSize:10}}>{itemCount} món</span>}
             </div>
             {cart.items.length>0&&<button onClick={()=>setCart({...EC,kpi:currentUser.id})} style={{fontSize:10.5,color:"var(--mut)",background:"none",border:"none",cursor:"pointer",fontWeight:500}}>Xoá tất cả</button>}
           </div>
-        <div style={{flex:1,overflowY:"auto",padding:"8px 14px 10px",minHeight:0}}>
+        <div style={{padding:"8px 14px 12px"}}>
           {cart.items.length===0&&(
             <div style={{textAlign:"center",padding:"18px 0",color:"var(--mut2)",fontSize:11.5}}>
               <i className="ti ti-shopping-cart-off" style={{fontSize:24,display:"block",marginBottom:4,opacity:.5}}/>
@@ -1106,13 +1140,21 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
         </div>
         </div>
 
-        <div style={{padding:"10px 14px",borderTop:"1px solid var(--bd)",background:"#fff",flexShrink:0,boxShadow:"0 -4px 12px rgba(0,0,0,.06)"}}>
+        </div>{/* /.order-scroll */}
+
+        <div style={{padding:"10px 14px",borderTop:"1px solid var(--bd)",background:"#fff",flexShrink:0,boxShadow:"0 -6px 16px rgba(0,0,0,.08)",zIndex:10}}>
+          {cart.items.length>0&&(
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,fontSize:11}}>
+              <span style={{color:"var(--mut)"}}>{itemCount} món · {cart.type==="ship"?"Ship":"Tại chỗ"}</span>
+              <span style={{color:"var(--text2)"}}>Tổng <strong style={{color:"var(--or)",fontSize:14,marginLeft:4}}>{fmt(total)}</strong></span>
+            </div>
+          )}
           <button onClick={create} disabled={!cart.items.length}
             className={cart.items.length?"btn-pri-grad":""}
-            style={{width:"100%",padding:"13px",border:"none",borderRadius:"var(--r-md)",fontSize:14,fontWeight:800,cursor:cart.items.length?"pointer":"not-allowed",background:cart.items.length?"":"#e5e5e5",color:cart.items.length?"":"#999",display:"flex",alignItems:"center",justifyContent:"center",gap:8,letterSpacing:.2}}>
+            style={{width:"100%",padding:"14px",border:"none",borderRadius:"var(--r-md)",fontSize:14.5,fontWeight:800,cursor:cart.items.length?"pointer":"not-allowed",background:cart.items.length?"":"#e5e5e5",color:cart.items.length?"":"#999",display:"flex",alignItems:"center",justifyContent:"center",gap:8,letterSpacing:.3}}>
             {cart.items.length
-              ? <><i className="ti ti-circle-check" style={{fontSize:17}}/>Tạo đơn · {itemCount} món · {fmt(total)}</>
-              : <><i className="ti ti-shopping-cart-plus" style={{fontSize:16}}/>Chọn sản phẩm để tạo đơn</>}
+              ? <><i className="ti ti-circle-check" style={{fontSize:18}}/>Tạo đơn ngay</>
+              : <><i className="ti ti-shopping-cart-plus" style={{fontSize:17}}/>Chọn sản phẩm để tạo đơn</>}
           </button>
         </div>
       </div>
@@ -1201,81 +1243,97 @@ function KitchenScreen({orders,setOrders,products,setProducts,toast}){
   };
 
   const cols=[
-    {k:"moi",     bg:"#FFF8F4",btnBg:"var(--or)",btnC:"#fff"},
-    {k:"pha_che", bg:"#eff6ff",btnBg:"#1e40af",btnC:"#fff"},
-    {k:"san_sang",bg:"#faf5ff",btnBg:"#15803d",btnC:"#fff"},
+    {k:"moi",     title:"Đơn mới",      ic:"ti-clipboard-plus",  bg:"#FFF8F4",btnBg:"var(--or-grad)",btnC:"#fff"},
+    {k:"pha_che", title:"Đang pha chế", ic:"ti-flame",            bg:"#EFF6FF",btnBg:"linear-gradient(135deg,#3B82F6,#1E40AF)",btnC:"#fff"},
+    {k:"san_sang",title:"Sẵn sàng",     ic:"ti-circle-check",     bg:"#FAF5FF",btnBg:"linear-gradient(135deg,#22C55E,#15803D)",btnC:"#fff"},
   ];
 
   const saveRecipe=(id,updated)=>setProducts(ps=>ps.map(p=>p.id===id?{...p,recipe:updated}:p));
+  const recipeProds = products.filter(p=>p.cat==="pha_che"&&p.on!==false);
 
   return (
     <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",background:"var(--bg)"}}>
-      <div style={{padding:"7px 16px",borderBottom:"1px solid var(--bd)",background:"#fff",display:"flex",alignItems:"center",gap:8,overflowX:"auto",flexShrink:0,minHeight:42}}>
-        <span style={{fontSize:10,color:"#999",flexShrink:0,fontWeight:700,letterSpacing:".5px"}}>CÔNG THỨC:</span>
-        {products.filter(p=>p.cat==="pha_che"&&p.on!==false).map(p=>(
-          <button key={p.id} onClick={()=>setRecipe(p)}
-            style={{fontSize:11,padding:"4px 10px",border:"1px solid var(--bd)",borderRadius:20,background:"#fafafa",cursor:"pointer",color:"#475569",whiteSpace:"nowrap",flexShrink:0,fontWeight:500}}>
-            {p.emoji} {p.name}
-          </button>
-        ))}
-      </div>
+      {recipeProds.length>0&&(
+        <div style={{padding:"8px 16px",borderBottom:"1px solid var(--bd)",background:"#fff",display:"flex",alignItems:"center",gap:8,overflowX:"auto",flexShrink:0,minHeight:46}}>
+          <span style={{fontSize:10,color:"var(--mut)",flexShrink:0,fontWeight:700,letterSpacing:.5,display:"flex",alignItems:"center",gap:4}}>
+            <i className="ti ti-book-2" style={{fontSize:14,color:"var(--or)"}}/>CÔNG THỨC
+          </span>
+          {recipeProds.map(p=>(
+            <button key={p.id} onClick={()=>setRecipe(p)} className="btn-ghost"
+              style={{fontSize:11,padding:"5px 11px",borderRadius:"var(--r-pill)",whiteSpace:"nowrap",flexShrink:0,fontWeight:600}}>
+              {p.emoji} {p.name}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div style={{flex:1,overflow:"hidden",display:"flex"}}>
+      <div className="kds-shell" style={{flex:1,overflow:"hidden",display:"flex"}}>
         {cols.map((col,ci)=>{
           const colOrders=orders.filter(o=>o.st===col.k);
+          const stColor=ST[col.k]?.color||"var(--or)";
           return (
-            <div key={col.k} style={{flex:1,borderRight:ci<2?"1px solid var(--bd)":"none",background:col.bg,overflowY:"auto",display:"flex",flexDirection:"column"}}>
-              <div style={{padding:"11px 14px",borderBottom:"1px solid rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,.85)",flexShrink:0,position:"sticky",top:0,zIndex:1}}>
-                <Bdg s={col.k}/>
-                <span style={{fontSize:11,color:"#767676"}}>{colOrders.length} đơn</span>
-                {col.k==="moi"&&colOrders.length>0&&<span style={{fontSize:10,color:"#ef4444",fontWeight:700,marginLeft:"auto",animation:"pulse 2s infinite"}}>● Cần xử lý</span>}
+            <div key={col.k} style={{flex:1,borderRight:ci<2?"1px solid var(--bd)":"none",background:col.bg,overflowY:"auto",display:"flex",flexDirection:"column",minWidth:0}}>
+              <div style={{padding:"12px 14px",borderBottom:"1px solid rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,.92)",backdropFilter:"blur(6px)",flexShrink:0,position:"sticky",top:0,zIndex:2,boxShadow:"0 2px 4px rgba(0,0,0,.03)"}}>
+                <i className={`ti ${col.ic}`} style={{fontSize:18,color:stColor}}/>
+                <span style={{fontSize:12.5,fontWeight:800,color:"var(--text)"}}>{col.title}</span>
+                <span className="chip" style={{background:stColor+"22",color:stColor,fontWeight:800}}>{colOrders.length}</span>
+                {col.k==="moi"&&colOrders.length>0&&<span style={{fontSize:10,color:"var(--err)",fontWeight:800,marginLeft:"auto",animation:"pulse 1.8s infinite",display:"flex",alignItems:"center",gap:3}}>● CẦN XỬ LÝ</span>}
               </div>
               <div style={{padding:10,display:"flex",flexDirection:"column",gap:10}}>
                 {colOrders.map(o=>{
                   const mins=elapsed(o.t);
                   const urgent=mins>15;
+                  const warn=mins>10&&mins<=15;
                   return (
-                    <div key={o.id} style={{background:"#fff",border:`2px solid ${urgent?"#fca5a5":"var(--bd)"}`,borderRadius:10,padding:13,transition:"border .2s"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                        <span style={{fontFamily:"monospace",fontWeight:800,color:"var(--or)",fontSize:15}}>{o.id}</span>
+                    <div key={o.id} className={urgent?"shake":""} style={{background:"#fff",border:`2px solid ${urgent?"#FCA5A5":warn?"#FCD34D":"var(--bd)"}`,borderRadius:"var(--r-md)",padding:13,transition:"border .2s",boxShadow:urgent?"0 4px 16px rgba(220,38,38,.15)":"var(--sh-sm)"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                        <span style={{fontFamily:"ui-monospace,monospace",fontWeight:800,color:"var(--or)",fontSize:15}}>{o.id}</span>
                         <div style={{display:"flex",alignItems:"center",gap:5}}>
-                          {urgent&&<span style={{fontSize:9,color:"#fff",fontWeight:800,background:"#ef4444",padding:"2px 5px",borderRadius:4}}>TRỄ</span>}
-                          <span style={{fontSize:11,padding:"2px 7px",borderRadius:4,background:urgent?"#fee2e2":"#f5f5f5",color:urgent?"#b91c1c":"#767676",fontWeight:600}}>{mins}p</span>
+                          {urgent&&<span style={{fontSize:9.5,color:"#fff",fontWeight:800,background:"var(--err)",padding:"3px 7px",borderRadius:"var(--r-pill)",letterSpacing:.3}}>TRỄ</span>}
+                          {warn&&<span style={{fontSize:9.5,color:"#fff",fontWeight:800,background:"var(--warn)",padding:"3px 7px",borderRadius:"var(--r-pill)",letterSpacing:.3}}>SẮP TRỄ</span>}
+                          <span style={{fontSize:11,padding:"3px 8px",borderRadius:"var(--r-pill)",background:urgent?"var(--err-bg)":warn?"var(--warn-bg)":"#F3F4F6",color:urgent?"var(--err)":warn?"var(--warn)":"var(--mut)",fontWeight:700,display:"inline-flex",alignItems:"center",gap:2}}>
+                            <i className="ti ti-clock" style={{fontSize:11}}/>{mins}p
+                          </span>
                         </div>
                       </div>
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:9}}>
-                        <span style={{fontSize:11.5,color:"#212121",fontWeight:600}}>{o.cus}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+                        <span style={{fontSize:12.5,color:"var(--text)",fontWeight:700}}>{o.cus}</span>
                         <TPill type={o.type}/>
                       </div>
                       {o.items.map((item,ii)=>{
                         const prod=products.find(p=>p.id===item.pid);
                         return (
-                          <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,color:"#212121",padding:"5px 0",borderBottom:ii<o.items.length-1?"1px dashed #f5f5f5":"none"}}>
-                            <div style={{lineHeight:1.4,flex:1}}>
+                          <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,color:"var(--text)",padding:"6px 0",borderBottom:ii<o.items.length-1?"1px dashed #F0F0F0":"none"}}>
+                            <div style={{lineHeight:1.4,flex:1,minWidth:0}}>
                               <span style={{fontWeight:600}}>{item.name}</span>
-                              {item.note&&<div style={{fontSize:10,color:"var(--or)"}}>📝 {item.note}</div>}
+                              {item.note&&<div style={{fontSize:10.5,color:"var(--or)",marginTop:1}}><i className="ti ti-note" style={{fontSize:10,marginRight:2}}/>{item.note}</div>}
                             </div>
-                            <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                              <span style={{fontWeight:800,fontSize:16}}>×{item.qty}</span>
+                            <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:6}}>
+                              <span style={{fontWeight:800,fontSize:17,color:"var(--or)",minWidth:30,textAlign:"right"}}>×{item.qty}</span>
                               {prod?.cat==="pha_che"&&(
-                                <button onClick={()=>setRecipe(prod)}
-                                  style={{fontSize:10,padding:"2px 7px",border:"1px solid #FFD4C2",borderRadius:4,background:"#FFF4F0",color:"var(--or)",cursor:"pointer",fontWeight:700}}>CT</button>
+                                <button onClick={()=>setRecipe(prod)} title="Xem công thức"
+                                  style={{fontSize:10,padding:"3px 8px",border:"1px solid #FFD4C2",borderRadius:"var(--r-pill)",background:"var(--orl)",color:"var(--or)",cursor:"pointer",fontWeight:800,letterSpacing:.3}}>CT</button>
                               )}
                             </div>
                           </div>
                         );
                       })}
-                      {o.note&&<div style={{fontSize:10,color:"var(--or)",marginTop:6,fontStyle:"italic"}}>📝 {o.note}</div>}
+                      {o.note&&<div style={{fontSize:11,color:"var(--or)",marginTop:7,fontStyle:"italic",background:"var(--orl)",padding:"5px 9px",borderRadius:"var(--r-sm)"}}><i className="ti ti-note" style={{fontSize:11,marginRight:3}}/>{o.note}</div>}
                       {nxLb(o)&&(
                         <button onClick={()=>advance(o)}
-                          style={{width:"100%",marginTop:10,padding:"9px",background:col.btnBg,border:"none",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",color:col.btnC}}>
-                          {nxLb(o)}
+                          style={{width:"100%",marginTop:11,padding:"10px",background:col.btnBg,border:"none",borderRadius:"var(--r-md)",fontSize:12.5,fontWeight:800,cursor:"pointer",color:col.btnC,letterSpacing:.3,boxShadow:"var(--sh-sm)",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                          <i className="ti ti-arrow-right" style={{fontSize:14}}/>{nxLb(o)}
                         </button>
                       )}
                     </div>
                   );
                 })}
-                {colOrders.length===0&&<div style={{textAlign:"center",padding:"30px 0",color:"#999",fontSize:12}}>Không có đơn</div>}
+                {colOrders.length===0&&(
+                  <div style={{textAlign:"center",padding:"40px 0",color:"var(--mut2)"}}>
+                    <i className={`ti ${col.ic}`} style={{fontSize:36,display:"block",marginBottom:6,opacity:.4}}/>
+                    <div style={{fontSize:12,fontWeight:500}}>Không có đơn</div>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -1332,22 +1390,28 @@ function ReturnReasonModal({order,onClose,onConfirm}){
 /* OrderCard dùng chung cho cả shipper và admin */
 function ShipperOrderCard({o,staff,actions,showShipper=true}){
   const sh = o.sid ? staff.find(x=>x.id===o.sid) : null;
+  const stColor=ST[o.st]?.color||"var(--or)";
   return (
-    <div style={{border:"1px solid #f0f0f0",borderRadius:8,padding:11,background:"#fff"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-        <span style={{fontFamily:"monospace",fontSize:12,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
-        <span style={{fontSize:10,color:"#767676"}}>{o.t}</span>
+    <div className="card card-hover" style={{borderRadius:"var(--r-md)",padding:0,background:"#fff",borderLeft:`3px solid ${stColor}`,overflow:"hidden"}}>
+      <div style={{padding:"11px 12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,gap:6,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontFamily:"ui-monospace,monospace",fontSize:12.5,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
+            <Bdg s={o.st}/>
+          </div>
+          <span style={{fontSize:10,color:"var(--mut2)",fontWeight:600,display:"inline-flex",alignItems:"center",gap:2}}><i className="ti ti-clock" style={{fontSize:11}}/>{o.t}</span>
+        </div>
+        <div style={{fontSize:12.5,color:"var(--text)",fontWeight:700,marginBottom:3}}>{o.cus}</div>
+        {o.ph&&<div style={{fontSize:11,color:"var(--mut)",marginBottom:3,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-phone" style={{fontSize:12}}/><a href={`tel:${o.ph}`} style={{color:"var(--info)",textDecoration:"none",fontWeight:600}}>{o.ph}</a></div>}
+        <div style={{fontSize:11,color:"var(--mut)",marginBottom:6,lineHeight:1.45,display:"flex",alignItems:"flex-start",gap:4}}><i className="ti ti-map-pin" style={{fontSize:12,marginTop:1,color:"var(--or)"}}/>{o.adr}</div>
+        <div style={{fontSize:11,color:"var(--text2)",marginBottom:7,lineHeight:1.45,background:"#FAFAFA",padding:"5px 9px",borderRadius:"var(--r-sm)"}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</div>
+        {o.returnReason&&<div style={{fontSize:11,color:"#9D174D",background:"#FCE7F3",borderRadius:"var(--r-sm)",padding:"5px 9px",marginBottom:7,fontWeight:500}}>↩️ {o.returnReason}</div>}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:actions?9:0,paddingTop:5,borderTop:"1px dashed var(--bd2)"}}>
+          <span style={{fontSize:13,color:"var(--or)",fontWeight:800,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-motorbike" style={{fontSize:14}}/>{fmt(o.dFee)}</span>
+          {showShipper&&sh&&<span className="chip">🛵 {sh.name}</span>}
+        </div>
+        {actions}
       </div>
-      <div style={{fontSize:12,color:"#212121",fontWeight:700,marginBottom:2}}>{o.cus}</div>
-      {o.ph&&<div style={{fontSize:11,color:"#767676",marginBottom:2}}>📱 <a href={`tel:${o.ph}`} style={{color:"#1e40af",textDecoration:"none"}}>{o.ph}</a></div>}
-      <div style={{fontSize:11,color:"#767676",marginBottom:5,lineHeight:1.4}}>📍 {o.adr}</div>
-      <div style={{fontSize:11,color:"#475569",marginBottom:6,lineHeight:1.4}}>{o.items.map(i=>`${i.name}×${i.qty}`).join(", ")}</div>
-      {o.returnReason&&<div style={{fontSize:11,color:"#9d174d",background:"#fce7f3",borderRadius:4,padding:"4px 8px",marginBottom:6}}>↩️ {o.returnReason}</div>}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:actions?8:0}}>
-        <span style={{fontSize:12,color:"var(--or)",fontWeight:800}}>Ship {fmt(o.dFee)}</span>
-        {showShipper&&sh&&<span style={{fontSize:10,color:"#999"}}>🛵 {sh.name}</span>}
-      </div>
-      {actions}
     </div>
   );
 }
@@ -1418,9 +1482,9 @@ function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast})
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
               {pending.map(o=>(
                 <ShipperOrderCard key={o.id} o={o} staff={staff} showShipper={false} actions={
-                  <div style={{display:"flex",gap:5}}>
-                    <button onClick={()=>cancel(o.id)} style={{flex:1,fontSize:11,padding:"7px",background:"#fff",border:"1px solid #fca5a5",borderRadius:5,color:"#b91c1c",cursor:"pointer",fontWeight:600}}>Huỷ</button>
-                    <button onClick={()=>pickup(o.id)} className="btn-pri" style={{flex:2,fontSize:11,padding:"7px",borderRadius:5,fontWeight:700}}>📦 Đã lấy hàng</button>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>cancel(o.id)} className="btn-ghost" style={{flex:1,fontSize:11.5,padding:"9px",borderRadius:"var(--r-sm)",color:"var(--err)",borderColor:"#FCA5A5",fontWeight:600}}><i className="ti ti-x" style={{fontSize:13,marginRight:2}}/>Huỷ</button>
+                    <button onClick={()=>pickup(o.id)} className="btn-pri-grad" style={{flex:2,fontSize:11.5,padding:"9px",borderRadius:"var(--r-sm)",fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:5}}><i className="ti ti-package" style={{fontSize:14}}/>Đã lấy hàng</button>
                   </div>
                 }/>
               ))}
@@ -1436,7 +1500,7 @@ function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast})
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
               {picked.map(o=>(
                 <ShipperOrderCard key={o.id} o={o} staff={staff} showShipper={false} actions={
-                  <button onClick={()=>startShip(o.id)} className="btn-pri" style={{width:"100%",fontSize:12,padding:"8px",borderRadius:5,fontWeight:700}}>🛵 Bắt đầu giao</button>
+                  <button onClick={()=>startShip(o.id)} className="btn-pri-grad" style={{width:"100%",fontSize:12,padding:"10px",borderRadius:"var(--r-sm)",fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:5}}><i className="ti ti-motorbike" style={{fontSize:14}}/>Bắt đầu giao</button>
                 }/>
               ))}
             </div>
@@ -1451,9 +1515,9 @@ function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast})
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
               {onroute.map(o=>(
                 <ShipperOrderCard key={o.id} o={o} staff={staff} showShipper={false} actions={
-                  <div style={{display:"flex",gap:5}}>
-                    <button onClick={()=>setReturnFor(o)} style={{flex:1,fontSize:11,padding:"7px",background:"#fce7f3",border:"none",borderRadius:5,color:"#9d174d",cursor:"pointer",fontWeight:700}}>↩ Hoàn hàng</button>
-                    <button onClick={()=>complete(o.id)} style={{flex:2,fontSize:11,padding:"7px",background:"#15803d",border:"none",borderRadius:5,color:"#fff",cursor:"pointer",fontWeight:700}}>✓ Hoàn thành</button>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>setReturnFor(o)} style={{flex:1,fontSize:11.5,padding:"9px",background:"#FCE7F3",border:"1px solid transparent",borderRadius:"var(--r-sm)",color:"#9D174D",cursor:"pointer",fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",gap:4}}><i className="ti ti-arrow-back" style={{fontSize:13}}/>Hoàn hàng</button>
+                    <button onClick={()=>complete(o.id)} style={{flex:2,fontSize:11.5,padding:"9px",background:"linear-gradient(135deg,#22C55E,#15803D)",border:"none",borderRadius:"var(--r-sm)",color:"#fff",cursor:"pointer",fontWeight:700,boxShadow:"var(--sh-sm)",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:5}}><i className="ti ti-circle-check" style={{fontSize:14}}/>Hoàn thành</button>
                   </div>
                 }/>
               ))}
@@ -1584,8 +1648,8 @@ function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast})
                 } else if (col.key==="dang_giao" || col.key==="da_lay") {
                   actions = (
                     <div style={{display:"flex",gap:5}}>
-                      <button onClick={()=>setReturnFor(o)} style={{flex:1,fontSize:10,padding:"5px",background:"#fce7f3",border:"none",borderRadius:5,color:"#9d174d",cursor:"pointer",fontWeight:700}}>↩ Hoàn hàng</button>
-                      <button onClick={()=>complete(o.id)} style={{flex:2,fontSize:10,padding:"5px",background:"#15803d",border:"none",borderRadius:5,color:"#fff",cursor:"pointer",fontWeight:700}}>✓ Đã giao</button>
+                      <button onClick={()=>setReturnFor(o)} style={{flex:1,fontSize:10.5,padding:"7px",background:"#FCE7F3",border:"none",borderRadius:"var(--r-sm)",color:"#9D174D",cursor:"pointer",fontWeight:700}}>↩ Hoàn hàng</button>
+                      <button onClick={()=>complete(o.id)} style={{flex:2,fontSize:10.5,padding:"7px",background:"linear-gradient(135deg,#22C55E,#15803D)",border:"none",borderRadius:"var(--r-sm)",color:"#fff",cursor:"pointer",fontWeight:700,boxShadow:"var(--sh-sm)"}}>✓ Đã giao</button>
                     </div>
                   );
                 }
