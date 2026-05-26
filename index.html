@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CLB Quản Lý Bán Hàng v1.5.0-rc1 (preview)</title>
+<title>CLB Quản Lý Bán Hàng v1.5.0-rc2 (preview)</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -231,7 +231,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.5.0-rc1";
+const VERSION = "1.5.0-rc2";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -1792,12 +1792,25 @@ function ShipperOrderCard({o,staff,actions,showShipper=true}){
   );
 }
 
-/* v1.5: Shipper Driver View — phong cách Grab/ShopeeFood Driver, focus 1 đơn/lần */
-function ShipperDriverView({orders,currentUser,staff,pickup,startShip,complete,cancel,setReturnFor,returnFor,doReturn}){
-  const [tab,setTab] = useState("active"); // active | history
+/* v1.5: Shipper APP — standalone, không sidebar/topbar, full-screen như Grab Driver
+   Tab: Pool (đơn chờ tự nhận) / Đang giao / Lịch sử
+   Self-claim: tap "Nhận đơn" → UPDATE WHERE sid IS NULL (concurrency-safe) */
+function ShipperApp({orders,currentUser,staff,pickup,startShip,complete,cancel,doReturn,onLogout,toast,connStatus,currentShift,onlineUsers}){
+  const [tab,setTab] = useState("active"); // pool | active | history
   const [focusId,setFocusId] = useState(null);
+  const [claimingNum,setClaimingNum] = useState(null);
+  const [returnFor,setReturnFor] = useState(null);
   const [now,setNow] = useState(new Date());
   useEffect(()=>{const t=setInterval(()=>setNow(new Date()),30000);return()=>clearInterval(t);},[]);
+
+  // Pool: đơn ship sẵn sàng chưa có shipper → bất kỳ ai cũng có thể claim
+  const pool = orders.filter(o=>o.type==="ship" && o.st==="san_sang" && (o.sid==null));
+  // Auto-switch sang tab pool nếu pool có đơn và đang ở active rỗng
+  useEffect(()=>{
+    if (pool.length>0 && tab==="active") {
+      // không auto-switch, chỉ show badge
+    }
+  },[pool.length]);
 
   const mine = orders.filter(o=>o.type==="ship" && o.sid===currentUser.id);
   const active = mine.filter(o=>["san_sang","da_lay","dang_giao"].includes(o.st))
@@ -1849,10 +1862,48 @@ function ShipperDriverView({orders,currentUser,staff,pickup,startShip,complete,c
   const mapsUrl = (adr) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(adr||"")}`;
   const itemTotal = (o) => (o.items||[]).reduce((s,i)=>s+i.qty*i.p,0) - (o.disc||0);
 
+  // Self-claim: concurrency-safe — chỉ update nếu sid vẫn null
+  const claim = async (order) => {
+    if (claimingNum) return; // tránh double-tap
+    setClaimingNum(order.num);
+    const {data,error} = await sb.from("orders")
+      .update({sid: currentUser.id})
+      .eq("num", order.num)
+      .is("sid", null)
+      .select();
+    setClaimingNum(null);
+    if (error) { toast("Lỗi nhận đơn: "+error.message, "error"); return; }
+    if (!data || data.length===0) {
+      toast("Đơn đã được shipper khác nhận", "warn");
+      return;
+    }
+    toast(`✓ Bạn đã nhận đơn ${order.id}`, "success");
+    setTab("active"); setFocusId(order.id);
+  };
+
   return (
-    <div style={{flex:1,overflowY:"auto",background:"#F5F5F5",display:"flex",flexDirection:"column"}}>
-      {/* ── Earnings bar (sticky top) ── */}
-      <div style={{position:"sticky",top:0,zIndex:10,background:"linear-gradient(135deg,#1F2937 0%,#111827 100%)",color:"#fff",padding:"12px 16px",boxShadow:"0 2px 8px rgba(0,0,0,.15)"}}>
+    <div style={{height:"100vh",background:"#F5F5F5",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif",overflow:"hidden"}}>
+
+      {/* ── App header (logout + connection status) ── */}
+      <div style={{background:"#0F172A",color:"#fff",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+          <span style={{fontSize:14}}>🛵</span>
+          <span style={{fontWeight:800,letterSpacing:.5}}>SHIPPER</span>
+          {currentShift && <span style={{fontSize:10.5,opacity:.6,marginLeft:6}}>· {currentShift.name}</span>}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{fontSize:10.5,display:"flex",alignItems:"center",gap:4,opacity:.85}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:connStatus==="live"?"#22c55e":"#ef4444",boxShadow:connStatus==="live"?"0 0 6px #22c55e":"none"}}/>
+            {connStatus==="live"?"Online":"Mất kết nối"}
+          </div>
+          <button onClick={onLogout} style={{background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",color:"#fff",fontSize:11,padding:"5px 11px",borderRadius:"var(--r-pill)",cursor:"pointer",fontWeight:600}}>
+            <i className="ti ti-logout" style={{fontSize:12,marginRight:4}}/>Thoát
+          </button>
+        </div>
+      </div>
+
+      {/* ── Earnings bar ── */}
+      <div style={{background:"linear-gradient(135deg,#1F2937 0%,#111827 100%)",color:"#fff",padding:"12px 16px",flexShrink:0,boxShadow:"0 2px 8px rgba(0,0,0,.15)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:9}}>
             <div style={{width:36,height:36,borderRadius:"50%",background:"var(--or)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"var(--sh-or)"}}>🛵</div>
@@ -1883,21 +1934,76 @@ function ShipperDriverView({orders,currentUser,staff,pickup,startShip,complete,c
       </div>
 
       {/* ── Tab switcher ── */}
-      <div style={{display:"flex",background:"#fff",borderBottom:"1px solid var(--bd)",padding:"0 16px",gap:0,flexShrink:0}}>
+      <div style={{display:"flex",background:"#fff",borderBottom:"1px solid var(--bd)",padding:"0 12px",gap:0,flexShrink:0}}>
         {[
-          {k:"active", l:"Đơn đang chạy", c:active.length},
-          {k:"history",l:"Lịch sử hôm nay", c:finished.length}
+          {k:"pool",   l:"Đơn chờ nhận", c:pool.length,   hl:pool.length>0},
+          {k:"active", l:"Đang giao",    c:active.length},
+          {k:"history",l:"Lịch sử",      c:finished.length}
         ].map(t=>(
           <button key={t.k} onClick={()=>setTab(t.k)}
-            style={{flex:1,padding:"14px 0",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:700,
+            style={{flex:1,padding:"13px 0",border:"none",background:"none",cursor:"pointer",fontSize:12.5,fontWeight:700,
               color:tab===t.k?"var(--or)":"var(--mut)",
               borderBottom:`3px solid ${tab===t.k?"var(--or)":"transparent"}`,
-              display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              display:"flex",alignItems:"center",justifyContent:"center",gap:5,position:"relative"}}>
             {t.l}
-            {t.c>0 && <span style={{fontSize:10,padding:"2px 7px",borderRadius:"var(--r-pill)",background:tab===t.k?"var(--or)":"#E5E7EB",color:tab===t.k?"#fff":"var(--mut)",fontWeight:800}}>{t.c}</span>}
+            {t.c>0 && <span style={{fontSize:10,padding:"2px 6px",borderRadius:"var(--r-pill)",background:t.hl&&tab!==t.k?"#EF4444":(tab===t.k?"var(--or)":"#E5E7EB"),color:(t.hl&&tab!==t.k)||tab===t.k?"#fff":"var(--mut)",fontWeight:800,animation:t.hl&&tab!==t.k?"pulse 1.5s infinite":"none"}}>{t.c}</span>}
           </button>
         ))}
       </div>
+
+      {/* ── Content area (scrollable) ── */}
+      <div style={{flex:1,overflowY:"auto",background:"#F5F5F5"}}>
+
+      {/* ── POOL TAB: Đơn chờ shipper nhận (self-claim) ── */}
+      {tab==="pool" && (
+        <div style={{padding:14,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{background:"linear-gradient(135deg,#FEF3C7,#FDE68A)",border:"1px solid #F59E0B33",borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:9}}>
+            <i className="ti ti-info-circle" style={{fontSize:18,color:"#D97706",flexShrink:0}}/>
+            <div style={{fontSize:11.5,color:"#92400E",lineHeight:1.4}}>
+              <b>Tự nhận đơn</b> · Đơn đầu tiên bạn tap "Nhận đơn" sẽ về bạn. Đơn đã được người khác lấy sẽ tự biến mất.
+            </div>
+          </div>
+
+          {pool.length===0 && (
+            <div style={{textAlign:"center",padding:"50px 20px",color:"var(--mut)"}}>
+              <div style={{fontSize:46,marginBottom:10,opacity:.4}}>📭</div>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text)"}}>Chưa có đơn chờ</div>
+              <div style={{fontSize:11.5,marginTop:5}}>Khi bếp pha xong đơn ship, đơn sẽ xuất hiện ở đây</div>
+            </div>
+          )}
+
+          {pool.map(o=>{
+            const isClaiming = claimingNum===o.num;
+            return (
+              <div key={o.id} style={{background:"#fff",borderRadius:12,padding:14,border:"2px solid #FCD34D",boxShadow:"0 4px 14px rgba(245,158,11,.15)",position:"relative"}}>
+                <div style={{position:"absolute",top:0,right:0,background:"linear-gradient(135deg,#F59E0B,#D97706)",color:"#fff",fontSize:10,fontWeight:800,padding:"3px 10px",borderBottomLeftRadius:10,letterSpacing:.5}}>MỚI</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontFamily:"ui-monospace,monospace",fontSize:13,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
+                  <span style={{fontSize:11,color:"var(--mut)",display:"flex",alignItems:"center",gap:3}}>
+                    <i className="ti ti-clock" style={{fontSize:11}}/>{o.t}
+                  </span>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:11,color:"var(--mut)",fontWeight:600,textTransform:"uppercase",marginBottom:2}}>Khách</div>
+                  <div style={{fontSize:15,fontWeight:700,color:"var(--text)"}}>{o.cus}</div>
+                </div>
+                <div style={{marginBottom:8,display:"flex",gap:6,alignItems:"flex-start"}}>
+                  <i className="ti ti-map-pin" style={{fontSize:16,color:"var(--or)",flexShrink:0,marginTop:2}}/>
+                  <div style={{flex:1,fontSize:13,color:"var(--text2)",lineHeight:1.4}}>{o.adr||"(không có địa chỉ)"}</div>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,padding:"7px 10px",background:"#F9FAFB",borderRadius:8}}>
+                  <span style={{fontSize:11.5,color:"var(--mut)"}}>{(o.items||[]).reduce((s,i)=>s+i.qty,0)} món · {o.pay==="qr"?"QR":"Tiền mặt"}</span>
+                  <span style={{fontSize:15,fontWeight:800,color:"var(--or)"}}>+{fmt(o.dFee||0)}</span>
+                </div>
+                <button onClick={()=>claim(o)} disabled={isClaiming}
+                  style={{width:"100%",padding:"14px",background:isClaiming?"#9CA3AF":"linear-gradient(135deg,#22C55E,#15803D)",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:800,cursor:isClaiming?"wait":"pointer",boxShadow:"0 4px 14px rgba(34,197,94,.3)"}}>
+                  {isClaiming ? "Đang nhận..." : "🛵 Nhận đơn này"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Content ── */}
       {tab==="active" && (
@@ -1905,8 +2011,17 @@ function ShipperDriverView({orders,currentUser,staff,pickup,startShip,complete,c
           {!current && (
             <div style={{textAlign:"center",padding:"60px 20px",color:"var(--mut)"}}>
               <div style={{fontSize:54,marginBottom:12,opacity:.4}}>☕</div>
-              <div style={{fontSize:15,fontWeight:700,color:"var(--text)"}}>Đang đợi đơn...</div>
-              <div style={{fontSize:11.5,marginTop:6}}>Khi Trưởng ca phân đơn, bạn sẽ thấy ngay tại đây</div>
+              <div style={{fontSize:15,fontWeight:700,color:"var(--text)"}}>Chưa có đơn đang giao</div>
+              <div style={{fontSize:11.5,marginTop:6}}>
+                {pool.length>0
+                  ? <span>Có <b style={{color:"var(--or)"}}>{pool.length} đơn chờ</b> ở tab "Đơn chờ nhận" — tap để xem</span>
+                  : "Khi có đơn mới, bạn có thể tự nhận ở tab \"Đơn chờ nhận\""}
+              </div>
+              {pool.length>0 && (
+                <button onClick={()=>setTab("pool")} className="btn-pri" style={{marginTop:14,padding:"10px 20px",borderRadius:8,fontSize:13,fontWeight:700}}>
+                  Xem đơn chờ →
+                </button>
+              )}
             </div>
           )}
 
@@ -2063,6 +2178,8 @@ function ShipperDriverView({orders,currentUser,staff,pickup,startShip,complete,c
         </div>
       )}
 
+      </div> {/* /content area */}
+
       {returnFor && <ReturnReasonModal order={returnFor} onClose={()=>setReturnFor(null)} onConfirm={r=>doReturn(returnFor.id,r)}/>}
     </div>
   );
@@ -2098,14 +2215,7 @@ function ShipperScreen({orders,setOrders,setProducts,staff,currentUser,effective
   // Để đơn giản giai đoạn này: KHÔNG hoàn kho khi hoàn hàng — đó là hàng đã đi ra.
   const doReturn  = (oid,reason) => { setSt(oid,{st:"hoan_hang",returnReason:reason},"↩️ Đã ghi nhận hoàn hàng","warn"); setReturnFor(null); };
 
-  /* ── VIEW CHO SHIPPER (v1.5: Grab Driver style — focus 1 đơn / lần) ── */
-  if (isShipper) {
-    return <ShipperDriverView
-      orders={orders} currentUser={currentUser} staff={staff}
-      pickup={pickup} startShip={startShip} complete={complete}
-      cancel={cancel} setReturnFor={setReturnFor}
-      returnFor={returnFor} doReturn={doReturn}/>;
-  }
+  /* Shipper role giờ dùng ShipperApp standalone (early return ở App component) */
 
   /* ── VIEW CHO TRƯỞNG CA / ADMIN ── */
   const wait     = ship.filter(o=>o.st==="san_sang");
@@ -3489,9 +3599,14 @@ function App(){
           }
         } else if (p.eventType === "UPDATE") {
           const old = p.old || {};
-          // Đơn sẵn sàng ship → báo trưởng ca biết để phân công
-          if (r.st === "san_sang" && r.type === "ship" && old.st !== "san_sang" && (role === "truong_ca" || role === "admin")) {
-            notify(`📦 Đơn cần phân shipper ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
+          // Đơn sẵn sàng ship & chưa có shipper → báo trưởng ca + shipper (self-claim pool)
+          if (r.st === "san_sang" && r.type === "ship" && old.st !== "san_sang" && r.sid == null) {
+            if (role === "truong_ca" || role === "admin") {
+              notify(`📦 Đơn cần phân shipper ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
+            }
+            if (role === "shipper") {
+              notify(`🆕 Đơn mới có thể nhận: ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
+            }
           }
           // Shipper bị gán đơn (sid thay đổi sang chính họ) → báo riêng cho shipper đó
           const uid = currentUserRef.current?.id;
@@ -3675,6 +3790,31 @@ function App(){
   // Đang nghỉ → màn rest
   if (effectiveRole === "off") {
     return <RestScreen user={currentUser} currentShift={currentShift} shifts={shifts} shiftAssignments={shiftAssignments} onLogout={handleLogout}/>;
+  }
+
+  // v1.5: Shipper có app standalone riêng (không sidebar/topbar admin)
+  if (effectiveRole === "shipper") {
+    // Reuse logic action từ ShipperScreen handlers (định nghĩa inline ở đây để có setOrders/setProducts)
+    const setSt = (oid,patch,msg,type="success") => {
+      setOrders(os=>os.map(o=>o.id===oid?{...o,...patch}:o));
+      if (msg) toast(msg,type);
+    };
+    const restoreStockShipper = (oid) => {
+      const o = orders.find(x=>x.id===oid);
+      if (!o || ["huy","hoan_thanh","hoan_hang"].includes(o.st)) return;
+      setProducts(ps=>ps.map(p=>{const ci=o.items.find(i=>i.pid===p.id);return ci?{...p,stock:p.stock+ci.qty}:p;}));
+    };
+    const pickup    = oid => setSt(oid,{st:"da_lay"},`Đã ghi nhận lấy đơn ${oid}`);
+    const startShip = oid => setSt(oid,{st:"dang_giao"},`Bắt đầu giao đơn ${oid}`);
+    const complete  = oid => setSt(oid,{st:"hoan_thanh"},`✓ Giao thành công ${oid}`);
+    const cancelSh  = oid => { if(!confirm("Huỷ đơn này?")) return; restoreStockShipper(oid); setSt(oid,{st:"huy"},"Đã huỷ đơn · đã hoàn kho","warn"); };
+    const doReturnSh= (oid,reason) => setSt(oid,{st:"hoan_hang",returnReason:reason},"↩️ Đã ghi nhận hoàn hàng","warn");
+    return <ShipperApp
+      orders={orders} currentUser={currentUser} staff={staff}
+      pickup={pickup} startShip={startShip} complete={complete}
+      cancel={cancelSh} doReturn={doReturnSh}
+      onLogout={handleLogout} toast={toast}
+      connStatus={connStatus} currentShift={currentShift} onlineUsers={onlineUsers}/>;
   }
 
   // Lọc màn theo role thực tế
