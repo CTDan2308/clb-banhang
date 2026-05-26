@@ -152,6 +152,14 @@ DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE shift_assignments;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- v1.4: REPLICA IDENTITY FULL — cần để realtime UPDATE/DELETE gửi đầy đủ row cũ.
+-- Code FE dùng p.old.st / p.old.sid để quyết định khi nào push notification cho shipper.
+-- Không có dòng này: p.old chỉ chứa PK → logic notify shipper khi sid đổi sẽ silent fail.
+ALTER TABLE orders            REPLICA IDENTITY FULL;
+ALTER TABLE products          REPLICA IDENTITY FULL;
+ALTER TABLE staff             REPLICA IDENTITY FULL;
+ALTER TABLE shift_assignments REPLICA IDENTITY FULL;
+
 -- ═══════════════════════════════════════
 -- 4. SEED DATA (chỉ nạp lần đầu, tránh trùng)
 -- ═══════════════════════════════════════

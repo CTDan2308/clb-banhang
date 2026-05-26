@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CLB Quản Lý Bán Hàng v1.3.1</title>
+<title>CLB Quản Lý Bán Hàng v1.4.0</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -231,7 +231,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.3.1";
+const VERSION = "1.4.0";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -675,7 +675,7 @@ function HelpPopup(){
 /* ══════════════════════════════════════════════════════════
    SIDEBAR + TOPBAR
 ══════════════════════════════════════════════════════════ */
-function Sidebar({screen,setScreen,orders,currentShift,allowed,sbOpen,onClose,onLogout,currentUser,effectiveRole}){
+function Sidebar({screen,setScreen,orders,currentShift,allowed,sbOpen,onClose,onLogout,currentUser,effectiveRole,onlineUsers=[]}){
   const pending  = orders.filter(o=>!["hoan_thanh","huy"].includes(o.st)).length;
   const inKitchen= orders.filter(o=>["moi","pha_che"].includes(o.st)).length;
   const inShip   = orders.filter(o=>o.type==="ship"&&["san_sang","dang_giao"].includes(o.st)).length;
@@ -720,6 +720,26 @@ function Sidebar({screen,setScreen,orders,currentShift,allowed,sbOpen,onClose,on
           <span><b>{currentShift.name}</b> · {currentShift.start_at}–{currentShift.end_at}</span>
         </div>
       )}
+      {/* v1.4: Presence — ai đang online */}
+      <div style={{padding:"8px 14px",borderBottom:"1px solid var(--bd2)",fontSize:11,color:"var(--text2)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:onlineUsers.length?6:0}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 3px rgba(34,197,94,.2)",animation:"pulse 2s infinite"}}/>
+          <span style={{fontWeight:700,color:"var(--text)"}}>{onlineUsers.length} đang online</span>
+        </div>
+        {onlineUsers.length>0 && (
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+            {onlineUsers.slice(0,6).map(u=>{
+              const [c,b] = RC[u.role]||["#475569","#f5f5f5"];
+              return (
+                <span key={u.id} title={`${u.name} · ${RL[u.role]||u.role}`} style={{fontSize:10,padding:"2px 7px",borderRadius:"var(--r-pill)",background:b,color:c,fontWeight:700,whiteSpace:"nowrap"}}>
+                  {u.name.split(" ").slice(-1)[0]}
+                </span>
+              );
+            })}
+            {onlineUsers.length>6 && <span style={{fontSize:10,padding:"2px 7px",color:"var(--mut)"}}>+{onlineUsers.length-6}</span>}
+          </div>
+        )}
+      </div>
       <nav style={{flex:1,padding:"8px 8px",overflowY:"auto"}}>
         {nav.map(n=>{
           const ac=screen===n.k;
@@ -909,7 +929,65 @@ function Dashboard({orders,staff}){
 /* ══════════════════════════════════════════════════════════
    ORDER SCREEN
 ══════════════════════════════════════════════════════════ */
-function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zones,categories,toast}){
+/* v1.4: Searchable KPI combobox — hỗ trợ chọn người ngoài ca */
+function KpiPicker({staff,value,onChange,inShiftIds,inp}){
+  const [open,setOpen]=useState(false);
+  const [q,setQ]=useState("");
+  const ref=useRef(null);
+  const selected=staff.find(s=>s.id===value);
+  const isOutShift=selected && !inShiftIds.has(selected.id);
+
+  useEffect(()=>{
+    if(!open) return;
+    const h=e=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",h);
+    return ()=>document.removeEventListener("mousedown",h);
+  },[open]);
+
+  const filtered=staff
+    .filter(s=>s.active && (!q || s.name.toLowerCase().includes(q.toLowerCase())))
+    .sort((a,b)=>{
+      const ai=inShiftIds.has(a.id), bi=inShiftIds.has(b.id);
+      if(ai!==bi) return ai?-1:1;
+      return a.name.localeCompare(b.name,"vi");
+    });
+
+  return (
+    <div ref={ref} style={{position:"relative"}}>
+      <button onClick={()=>setOpen(o=>!o)} type="button"
+        style={{...inp,padding:"8px 9px",border:`1.5px solid ${isOutShift?"#DC2626":(value!==undefined?"var(--or)":"var(--bd)")}`,background:isOutShift?"#FEF2F2":"var(--orl)",cursor:"pointer",fontWeight:600,fontSize:11.5,color:isOutShift?"#DC2626":"var(--or)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,textAlign:"left"}}>
+        <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          {selected ? selected.name : "Chọn KPI..."}
+          {isOutShift && <span style={{fontSize:9,marginLeft:5,padding:"1px 5px",background:"#fff",color:"#DC2626",borderRadius:"var(--r-pill)",fontWeight:800}}>ngoài ca</span>}
+        </span>
+        <i className="ti ti-chevron-down" style={{fontSize:13,flexShrink:0}}/>
+      </button>
+      {open && (
+        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"#fff",border:"1px solid var(--bd)",borderRadius:"var(--r-md)",boxShadow:"var(--sh-lg)",zIndex:50,maxHeight:280,display:"flex",flexDirection:"column"}}>
+          <input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Tìm tên..."
+            style={{padding:"8px 10px",border:"none",borderBottom:"1px solid var(--bd2)",fontSize:12,outline:"none"}}/>
+          <div style={{overflowY:"auto",flex:1}}>
+            {filtered.length===0 && <div style={{padding:14,color:"var(--mut)",fontSize:11.5,textAlign:"center"}}>Không tìm thấy</div>}
+            {filtered.map(s=>{
+              const out=!inShiftIds.has(s.id);
+              return (
+                <div key={s.id} onClick={()=>{onChange(s.id);setOpen(false);setQ("");}}
+                  style={{padding:"8px 10px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,borderBottom:"1px solid var(--bd2)",background:s.id===value?"var(--orl)":"#fff"}}
+                  onMouseEnter={e=>{if(s.id!==value)e.currentTarget.style.background="#FAFAFA"}}
+                  onMouseLeave={e=>{if(s.id!==value)e.currentTarget.style.background="#fff"}}>
+                  <span><b>{s.name}</b> <small style={{color:"var(--mut)"}}>· {RL[s.role]}</small></span>
+                  {out && <span style={{fontSize:9,padding:"1px 6px",background:"#FEF2F2",color:"#DC2626",borderRadius:"var(--r-pill)",fontWeight:700}}>ngoài ca</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zones,categories,toast,shiftAssignments=[],currentShift=null}){
   const EC = {cus:"",ph:"",type:"tai_cho",adr:"",zone:0,kpi:currentUser.id,pay:"cash",disc:0,dT:"fixed",note:"",items:[]};
   const cats = categories.length ? categories : Object.keys(CL_FALLBACK).map((k,i)=>({key:k,label:CL_FALLBACK[k],sort:i}));
   const [cat,setCat]   = useState(cats[0]?.key || "pha_che");
@@ -952,7 +1030,16 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
     toast(`✅ Đơn ${id} tạo thành công · ${fmt(total)}`,"success");
   };
 
-  const cancel=id=>{setOrders(os=>os.map(o=>o.id===id?{...o,st:"huy"}:o));toast("Đã huỷ đơn","warn");};
+  const cancel=id=>{
+    const o = orders.find(x=>x.id===id);
+    if(!o) return;
+    // Chỉ hoàn kho cho đơn chưa kết thúc (tránh hoàn 2 lần)
+    if(!["huy","hoan_thanh","hoan_hang"].includes(o.st)){
+      setProducts(ps=>ps.map(p=>{const ci=o.items.find(i=>i.pid===p.id);return ci?{...p,stock:p.stock+ci.qty}:p;}));
+    }
+    setOrders(os=>os.map(x=>x.id===id?{...x,st:"huy"}:x));
+    toast("Đã huỷ đơn · đã hoàn kho","warn");
+  };
   const active=orders.filter(o=>!["hoan_thanh","huy"].includes(o.st));
 
   useEffect(()=>{if(noteFor&&noteRef.current)noteRef.current.focus();},[noteFor]);
@@ -984,10 +1071,10 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
             </div>
             <div>
               <div style={{...lbl,color:"var(--or)"}}><i className="ti ti-target" style={{fontSize:11,marginRight:3}}/>Người nhận KPI</div>
-              <select value={cart.kpi} onChange={e=>setCart(c=>({...c,kpi:+e.target.value}))}
-                style={{...inp,padding:"8px 9px",border:`1.5px solid ${cart.kpi!==currentUser.id?"var(--or)":"var(--bd)"}`,background:cart.kpi!==currentUser.id?"var(--orl)":"#fff",cursor:"pointer",fontWeight:600,fontSize:11.5,color:cart.kpi!==currentUser.id?"var(--or)":"var(--text)"}}>
-                {staff.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.name} · {RL[s.role]}</option>)}
-              </select>
+              <KpiPicker staff={staff} value={cart.kpi}
+                onChange={id=>setCart(c=>({...c,kpi:id}))}
+                inShiftIds={new Set(shiftAssignments.filter(a=>a.shift_id===currentShift?.id && a.role!=="off").map(a=>a.staff_id))}
+                inp={inp}/>
             </div>
           </div>
           <div>
@@ -1227,6 +1314,295 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
 }
 
 /* ══════════════════════════════════════════════════════════
+   CUSTOMER ORDER SCREEN (v1.4) — public, không cần PIN
+   Truy cập: ?customer=1 hoặc ?qr=<table_id>
+══════════════════════════════════════════════════════════ */
+function CustomerOrderScreen({products,categories,zones,toast}){
+  const [cart,setCart]=useState({}); // {pid: qty}
+  const [showSheet,setShowSheet]=useState(false);
+  const [form,setForm]=useState({cus:"",ph:"",type:"tai_cho",adr:"",zoneIdx:0,note:""});
+  const [submitting,setSubmitting]=useState(false);
+  const [myOrder,setMyOrder]=useState(()=>{
+    try { return JSON.parse(localStorage.getItem("clb_customer_order")||"null"); } catch { return null; }
+  });
+  const [orderStatus,setOrderStatus]=useState(myOrder?.st||null);
+  const [tableId]=useState(()=>new URLSearchParams(location.search).get("qr"));
+
+  const cats = categories.length ? categories : Object.keys(CL_FALLBACK).map((k,i)=>({key:k,label:CL_FALLBACK[k],sort:i}));
+  const [activeCat,setActiveCat]=useState(cats[0]?.key||"pha_che");
+  const visible = products.filter(p=>p.on!==false && p.stock>0);
+  const inCat = visible.filter(p=>p.cat===activeCat);
+
+  const items = Object.entries(cart).map(([pid,qty])=>{
+    const p=products.find(x=>x.id===+pid);
+    return p?{pid:+pid,name:p.name,qty,p:p.price,emoji:p.emoji,stock:p.stock}:null;
+  }).filter(Boolean);
+  const subtotal = items.reduce((s,i)=>s+i.qty*i.p,0);
+  const dFee = form.type==="ship" ? (zones[form.zoneIdx]?.fee||0) : 0;
+  const total = subtotal + dFee;
+
+  // Realtime track đơn của mình (nếu đã đặt)
+  useEffect(()=>{
+    if(!myOrder?.num) return;
+    const ch = sb.channel("customer-order-"+myOrder.num)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"orders",filter:`num=eq.${myOrder.num}`},p=>{
+        if(p.new?.st){
+          setOrderStatus(p.new.st);
+          if(p.new.st==="hoan_thanh") toast("✅ Đơn của bạn đã hoàn thành!","success");
+        }
+      }).subscribe();
+    return ()=>sb.removeChannel(ch);
+  },[myOrder?.num]);
+
+  const inc=p=>{
+    if((cart[p.id]||0)>=p.stock){ toast(`Chỉ còn ${p.stock} ${p.name}`,"warn"); return; }
+    setCart(c=>({...c,[p.id]:(c[p.id]||0)+1}));
+  };
+  const dec=pid=>setCart(c=>{const n={...c};if(n[pid]>1)n[pid]--;else delete n[pid];return n;});
+
+  const submit=async()=>{
+    if(!form.cus.trim()){ toast("Vui lòng nhập tên","warn"); return; }
+    if(!items.length){ toast("Giỏ đang trống","warn"); return; }
+    if(form.type==="ship" && !form.adr.trim()){ toast("Vui lòng nhập địa chỉ giao","warn"); return; }
+    setSubmitting(true);
+    try {
+      // Lấy số đơn kế tiếp
+      const {data:maxRow} = await sb.from("orders").select("num").order("num",{ascending:false}).limit(1).maybeSingle();
+      const num = (maxRow?.num||0)+1;
+      const newOrder = {
+        num, t:nowS(), cus:form.cus.trim(), ph:form.ph||"", type:form.type,
+        adr:form.type==="ship"?form.adr.trim():(tableId?`Bàn ${tableId}`:""),
+        items:items.map(i=>({pid:i.pid,name:i.name,qty:i.qty,p:i.p,note:""})),
+        st:"moi", pay:"cash", d_fee:dFee, disc:0, d_t:"fixed",
+        by_id:null, kpi_id:null, sid:null,
+        note:(form.note||"")+(tableId?` [QR bàn ${tableId}]`:" [Khách tự đặt]"),
+        return_reason:null
+      };
+      const {error} = await sb.from("orders").insert(newOrder);
+      if(error){ toast("Lỗi đặt đơn: "+error.message,"error"); setSubmitting(false); return; }
+      // Trừ kho từng product
+      await Promise.all(items.map(i=>{
+        const p=products.find(x=>x.id===i.pid);
+        return sb.from("products").update({stock:Math.max(0,p.stock-i.qty)}).eq("id",i.pid);
+      }));
+      const saved={num,id:`ĐH${String(num).padStart(3,"0")}`,st:"moi",total,cus:form.cus.trim(),items:newOrder.items,t:nowS()};
+      localStorage.setItem("clb_customer_order",JSON.stringify(saved));
+      setMyOrder(saved); setOrderStatus("moi");
+      setCart({}); setShowSheet(false); setSubmitting(false);
+      toast(`✅ Đã đặt đơn ${saved.id}`,"success");
+    } catch(e){
+      console.error(e); toast("Lỗi không xác định","error"); setSubmitting(false);
+    }
+  };
+
+  const newOrder=()=>{
+    localStorage.removeItem("clb_customer_order");
+    setMyOrder(null); setOrderStatus(null);
+    setForm({cus:"",ph:"",type:"tai_cho",adr:"",zoneIdx:0,note:""});
+  };
+
+  // ── MÀN STATUS sau khi đặt ──
+  if(myOrder){
+    const stInfo=ST[orderStatus]||ST.moi;
+    const statusSteps=["moi","pha_che","san_sang","dang_giao","hoan_thanh"];
+    const curStep=statusSteps.indexOf(orderStatus);
+    const isCancelled=orderStatus==="huy"||orderStatus==="hoan_hang";
+    return (
+      <div style={{minHeight:"100vh",background:"linear-gradient(180deg,#FFF4F0 0%,#fff 100%)",padding:"24px 16px",fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+        <div style={{maxWidth:480,margin:"0 auto"}}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:48,marginBottom:8}}>{isCancelled?"😢":(orderStatus==="hoan_thanh"?"🎉":"☕")}</div>
+            <div style={{fontSize:20,fontWeight:800,color:"var(--or)"}}>{isCancelled?"Đơn đã huỷ":(orderStatus==="hoan_thanh"?"Cảm ơn bạn!":"Đã ghi nhận đơn")}</div>
+            <div style={{fontSize:13,color:"var(--mut)",marginTop:4}}>Mã đơn: <b style={{color:"var(--text)"}}>{myOrder.id}</b></div>
+          </div>
+          <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"var(--sh-md)",marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <span style={{fontSize:12,color:"var(--mut)"}}>Trạng thái</span>
+              <span style={{padding:"4px 10px",borderRadius:"var(--r-pill)",background:stInfo.bg,color:stInfo.color,fontSize:12,fontWeight:700}}>{stInfo.label}</span>
+            </div>
+            {!isCancelled && (
+              <div style={{display:"flex",justifyContent:"space-between",position:"relative",marginBottom:12}}>
+                <div style={{position:"absolute",top:10,left:10,right:10,height:2,background:"#E8E8E8",zIndex:0}}/>
+                <div style={{position:"absolute",top:10,left:10,height:2,background:"var(--or)",zIndex:1,transition:"width .4s var(--ease)",width:curStep<0?0:`calc(${(curStep/(statusSteps.length-1))*100}% - 20px)`}}/>
+                {statusSteps.map((s,i)=>(
+                  <div key={s} style={{position:"relative",zIndex:2,display:"flex",flexDirection:"column",alignItems:"center",flex:1}}>
+                    <div style={{width:20,height:20,borderRadius:"50%",background:i<=curStep?"var(--or)":"#E8E8E8",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{i<=curStep?"✓":i+1}</div>
+                    <div style={{fontSize:9,color:i<=curStep?"var(--or)":"var(--mut)",marginTop:4,fontWeight:600,textAlign:"center"}}>{ST[s]?.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{borderTop:"1px dashed var(--bd)",marginTop:12,paddingTop:12}}>
+              {myOrder.items.map((i,idx)=>(
+                <div key={idx} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0"}}>
+                  <span>{i.name} × {i.qty}</span><span>{fmt(i.qty*i.p)}</span>
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:14,marginTop:8,paddingTop:8,borderTop:"1px solid var(--bd2)",color:"var(--or)"}}>
+                <span>Tổng</span><span>{fmt(myOrder.total)}</span>
+              </div>
+            </div>
+          </div>
+          <button onClick={newOrder} className="btn-pri" style={{width:"100%",padding:"12px",borderRadius:"var(--r-md)",fontSize:13.5}}>Đặt đơn mới</button>
+          <div style={{textAlign:"center",fontSize:10.5,color:"var(--mut)",marginTop:12}}>Trang sẽ tự cập nhật khi trạng thái thay đổi</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MÀN MENU ──
+  return (
+    <div style={{minHeight:"100vh",background:"var(--bg)",paddingBottom:items.length?86:20,fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+      <div style={{background:"var(--or-grad)",color:"#fff",padding:"18px 16px 14px",boxShadow:"var(--sh-md)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{fontSize:28}}>🛒</div>
+          <div>
+            <div style={{fontSize:16,fontWeight:800,letterSpacing:.3}}>CLB BÁN HÀNG</div>
+            <div style={{fontSize:11,opacity:.9}}>{tableId?`📍 Bàn ${tableId}`:"Đặt món trực tuyến"}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:6,padding:"12px 12px 8px",overflowX:"auto",background:"#fff",borderBottom:"1px solid var(--bd2)",position:"sticky",top:0,zIndex:5}}>
+        {cats.map(c=>(
+          <button key={c.key} onClick={()=>setActiveCat(c.key)}
+            style={{flexShrink:0,padding:"7px 14px",borderRadius:"var(--r-pill)",border:"1px solid "+(activeCat===c.key?"var(--or)":"var(--bd)"),background:activeCat===c.key?"var(--or)":"#fff",color:activeCat===c.key?"#fff":"var(--text2)",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:12,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
+        {inCat.length===0 && <div style={{gridColumn:"1/-1",textAlign:"center",padding:30,color:"var(--mut)",fontSize:12}}>Không còn món trong danh mục này</div>}
+        {inCat.map(p=>{
+          const q=cart[p.id]||0;
+          return (
+            <div key={p.id} className="card" style={{padding:10,display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:36,textAlign:"center",lineHeight:1}}>{p.emoji||"🍽️"}</div>
+              <div style={{fontSize:12.5,fontWeight:700,color:"var(--text)",minHeight:32}} className="clamp-2">{p.name}</div>
+              <div style={{fontSize:13,fontWeight:800,color:"var(--or)"}}>{fmt(p.price)}</div>
+              {q===0 ? (
+                <button onClick={()=>inc(p)} className="btn-pri" style={{padding:"7px",borderRadius:"var(--r-sm)",fontSize:12,marginTop:"auto"}}>+ Thêm</button>
+              ) : (
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"auto",background:"var(--orl)",borderRadius:"var(--r-sm)",padding:"4px"}}>
+                  <button onClick={()=>dec(p.id)} style={{border:"none",background:"#fff",width:28,height:28,borderRadius:4,cursor:"pointer",color:"var(--or)",fontSize:16,fontWeight:800}}>−</button>
+                  <span style={{fontWeight:800,color:"var(--or)",fontSize:14}}>{q}</span>
+                  <button onClick={()=>inc(p)} style={{border:"none",background:"var(--or)",color:"#fff",width:28,height:28,borderRadius:4,cursor:"pointer",fontSize:16,fontWeight:800}}>+</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Floating cart bar */}
+      {items.length>0 && !showSheet && (
+        <div onClick={()=>setShowSheet(true)} style={{position:"fixed",bottom:12,left:12,right:12,background:"var(--or-grad)",color:"#fff",borderRadius:14,padding:"12px 16px",boxShadow:"var(--sh-lg)",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",zIndex:30,animation:"fadeUp .25s var(--ease)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:"rgba(255,255,255,.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛒</div>
+            <div>
+              <div style={{fontSize:12,opacity:.9}}>{items.reduce((s,i)=>s+i.qty,0)} món</div>
+              <div style={{fontSize:15,fontWeight:800}}>{fmt(subtotal)}</div>
+            </div>
+          </div>
+          <span style={{fontSize:13,fontWeight:700}}>Đặt đơn →</span>
+        </div>
+      )}
+
+      {/* Bottom sheet — cart + form */}
+      {showSheet && (
+        <>
+          <div onClick={()=>setShowSheet(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:40,animation:"fadeIn .2s var(--ease)"}}/>
+          <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderRadius:"18px 18px 0 0",zIndex:41,maxHeight:"92vh",display:"flex",flexDirection:"column",animation:"fadeUp .25s var(--ease)"}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid var(--bd2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontWeight:800,fontSize:15}}>Xác nhận đơn</div>
+              <button onClick={()=>setShowSheet(false)} style={{border:"none",background:"none",fontSize:22,cursor:"pointer",color:"var(--mut)"}}>✕</button>
+            </div>
+            <div style={{overflowY:"auto",padding:14,flex:1}}>
+              {items.map(i=>(
+                <div key={i.pid} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid var(--bd2)"}}>
+                  <span style={{fontSize:22}}>{i.emoji}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600}} className="clamp-1">{i.name}</div>
+                    <div style={{fontSize:11.5,color:"var(--or)",fontWeight:700}}>{fmt(i.p)}</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <button onClick={()=>dec(i.pid)} style={{border:"1px solid var(--bd)",background:"#fff",width:26,height:26,borderRadius:4,cursor:"pointer",fontSize:14}}>−</button>
+                    <span style={{minWidth:20,textAlign:"center",fontWeight:700}}>{i.qty}</span>
+                    <button onClick={()=>{const p=products.find(x=>x.id===i.pid); inc(p);}} style={{border:"1px solid var(--or)",background:"var(--or)",color:"#fff",width:26,height:26,borderRadius:4,cursor:"pointer",fontSize:14}}>+</button>
+                  </div>
+                </div>
+              ))}
+              <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:9}}>
+                <div>
+                  <div style={{fontSize:10,color:"var(--mut)",marginBottom:4,fontWeight:700,textTransform:"uppercase"}}>Tên của bạn *</div>
+                  <input value={form.cus} onChange={e=>setForm(f=>({...f,cus:e.target.value}))} placeholder="Nhập tên..."
+                    style={{width:"100%",padding:"10px 12px",border:"1px solid var(--bd)",borderRadius:"var(--r-sm)",fontSize:13.5}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:"var(--mut)",marginBottom:4,fontWeight:700,textTransform:"uppercase"}}>SĐT (để liên hệ nếu cần)</div>
+                  <input value={form.ph} onChange={e=>setForm(f=>({...f,ph:e.target.value}))} placeholder="09xx..." inputMode="tel"
+                    style={{width:"100%",padding:"10px 12px",border:"1px solid var(--bd)",borderRadius:"var(--r-sm)",fontSize:13.5}}/>
+                </div>
+                {!tableId && (
+                  <div>
+                    <div style={{fontSize:10,color:"var(--mut)",marginBottom:4,fontWeight:700,textTransform:"uppercase"}}>Loại đơn</div>
+                    <div style={{display:"flex",gap:6}}>
+                      {[["tai_cho","🏠","Tại chỗ"],["ship","🛵","Giao hàng"]].map(([v,e,l])=>(
+                        <button key={v} onClick={()=>setForm(f=>({...f,type:v}))} type="button"
+                          style={{flex:1,padding:"9px",border:`1.5px solid ${form.type===v?"var(--or)":"var(--bd)"}`,background:form.type===v?"var(--orl)":"#fff",color:form.type===v?"var(--or)":"var(--text2)",borderRadius:"var(--r-sm)",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{e} {l}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {form.type==="ship" && (
+                  <>
+                    <div>
+                      <div style={{fontSize:10,color:"var(--mut)",marginBottom:4,fontWeight:700,textTransform:"uppercase"}}>Địa chỉ giao *</div>
+                      <input value={form.adr} onChange={e=>setForm(f=>({...f,adr:e.target.value}))} placeholder="Tòa B5 P.302..."
+                        style={{width:"100%",padding:"10px 12px",border:"1px solid var(--bd)",borderRadius:"var(--r-sm)",fontSize:13.5}}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:"var(--mut)",marginBottom:4,fontWeight:700,textTransform:"uppercase"}}>Khoảng cách (phí ship)</div>
+                      <select value={form.zoneIdx} onChange={e=>setForm(f=>({...f,zoneIdx:+e.target.value}))}
+                        style={{width:"100%",padding:"10px 12px",border:"1px solid var(--bd)",borderRadius:"var(--r-sm)",fontSize:13}}>
+                        {zones.map((z,i)=><option key={i} value={i}>{z.lb} · {fmt(z.fee)}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                <div>
+                  <div style={{fontSize:10,color:"var(--mut)",marginBottom:4,fontWeight:700,textTransform:"uppercase"}}>Ghi chú</div>
+                  <textarea value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Ít đường, ko đá..." rows={2}
+                    style={{width:"100%",padding:"10px 12px",border:"1px solid var(--bd)",borderRadius:"var(--r-sm)",fontSize:13,resize:"vertical"}}/>
+                </div>
+              </div>
+            </div>
+            <div style={{padding:"12px 16px",borderTop:"1px solid var(--bd2)",background:"#fff"}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"var(--mut)",marginBottom:3}}>
+                <span>Tạm tính</span><span>{fmt(subtotal)}</span>
+              </div>
+              {form.type==="ship" && (
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"var(--mut)",marginBottom:3}}>
+                  <span>Phí ship</span><span>{fmt(dFee)}</span>
+                </div>
+              )}
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:16,fontWeight:800,color:"var(--or)",marginBottom:10}}>
+                <span>Tổng cộng</span><span>{fmt(total)}</span>
+              </div>
+              <button onClick={submit} disabled={submitting||!form.cus.trim()||(form.type==="ship"&&!form.adr.trim())}
+                className="btn-pri-grad" style={{width:"100%",padding:"13px",borderRadius:"var(--r-md)",fontSize:14}}>
+                {submitting?"Đang gửi...":"✓ Đặt đơn ngay"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
    KITCHEN (KDS)
 ══════════════════════════════════════════════════════════ */
 function KitchenScreen({orders,setOrders,products,setProducts,toast}){
@@ -1416,7 +1792,7 @@ function ShipperOrderCard({o,staff,actions,showShipper=true}){
   );
 }
 
-function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast}){
+function ShipperScreen({orders,setOrders,setProducts,staff,currentUser,effectiveRole,toast}){
   const [returnFor,setReturnFor] = useState(null);
   const isShipper   = effectiveRole==="shipper";
   const canAssign   = effectiveRole==="truong_ca" || effectiveRole==="admin";
@@ -1428,6 +1804,12 @@ function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast})
     setOrders(os=>os.map(o=>o.id===oid?{...o,...patch}:o));
     if (msg) toast(msg,type);
   };
+  // Hoàn kho cho đơn (chỉ khi chưa kết thúc — tránh hoàn 2 lần)
+  const restoreStock = (oid) => {
+    const o = orders.find(x=>x.id===oid);
+    if (!o || ["huy","hoan_thanh","hoan_hang"].includes(o.st)) return;
+    setProducts(ps=>ps.map(p=>{const ci=o.items.find(i=>i.pid===p.id);return ci?{...p,stock:p.stock+ci.qty}:p;}));
+  };
   const assign  = (oid,sid)=>{
     if (!canAssign) { toast("Chỉ Trưởng ca / Admin mới được phân công shipper","warn"); return; }
     setSt(oid,{sid},`Phân công ${staff.find(s=>s.id===sid)?.name} → đơn ${oid}`);
@@ -1435,7 +1817,9 @@ function ShipperScreen({orders,setOrders,staff,currentUser,effectiveRole,toast})
   const pickup    = oid => setSt(oid,{st:"da_lay"},`Đã ghi nhận lấy đơn ${oid}`);
   const startShip = oid => setSt(oid,{st:"dang_giao"},`Bắt đầu giao đơn ${oid}`);
   const complete  = oid => setSt(oid,{st:"hoan_thanh"},`✓ Giao thành công đơn ${oid}`);
-  const cancel    = oid => { if(!confirm("Huỷ đơn này?")) return; setSt(oid,{st:"huy"},"Đã huỷ đơn","warn"); };
+  const cancel    = oid => { if(!confirm("Huỷ đơn này?")) return; restoreStock(oid); setSt(oid,{st:"huy"},"Đã huỷ đơn · đã hoàn kho","warn"); };
+  // Hoàn hàng: hoàn kho cho đồ pha chế thì không hợp lý (đã pha rồi), nhưng đồ san_co/kho thì có thể trả lại.
+  // Để đơn giản giai đoạn này: KHÔNG hoàn kho khi hoàn hàng — đó là hàng đã đi ra.
   const doReturn  = (oid,reason) => { setSt(oid,{st:"hoan_hang",returnReason:reason},"↩️ Đã ghi nhận hoàn hàng","warn"); setReturnFor(null); };
 
   /* ── VIEW CHO SHIPPER (cá nhân, chỉ xem đơn của mình) ── */
@@ -2652,6 +3036,8 @@ function App(){
   const [shifts,_setShifts]  = useState([]);
   const [shiftAssignments,_setShiftAssignments] = useState([]);
   const [currentUser,setCurrentUser] = useState(null);
+  const [onlineUsers,setOnlineUsers] = useState([]); // v1.4: presence tracking
+  const channelRef = useRef(null);
   const [notifEnabled,setNotifEnabled] = useState(()=>localStorage.getItem("clb_notif")==="1");
   const [tickMin,setTickMin] = useState(0); // re-render mỗi phút để cập nhật ca hiện tại
   const [toasts,setToasts]   = useState([]);
@@ -2907,7 +3293,15 @@ function App(){
       });
     };
 
-    const ch = sb.channel("clb-realtime")
+    const ch = sb.channel("clb-realtime",{config:{presence:{key:"clb-presence"}}})
+      .on("presence",{event:"sync"},()=>{
+        const state = ch.presenceState();
+        // state shape: { socketKey: [ {id,name,role,joinedAt}, ... ], ... }
+        // Dedupe theo id (1 user có thể mở nhiều tab)
+        const seen = new Map();
+        Object.values(state).flat().forEach(u=>{ if(u && u.id!=null && !seen.has(u.id)) seen.set(u.id,u); });
+        setOnlineUsers(Array.from(seen.values()));
+      })
       .on("postgres_changes",{event:"*",schema:"public",table:"products"},p=>{
         if (p.eventType==="DELETE") removeFrom(_setProducts,productsRef,"id",p.old.id);
         else mergeProduct(p.new);
@@ -2986,12 +3380,41 @@ function App(){
           });
         }
       })
-      .subscribe(status=>{
-        if (status==="SUBSCRIBED") setConnStatus("live");
+      .subscribe(async status=>{
+        if (status==="SUBSCRIBED") {
+          setConnStatus("live");
+          // Nếu đã login, track presence ngay khi channel sẵn sàng
+          if (currentUserRef.current) {
+            await ch.track({
+              id: currentUserRef.current.id,
+              name: currentUserRef.current.name,
+              role: effectiveRoleRef.current || currentUserRef.current.role,
+              joinedAt: Date.now()
+            });
+          }
+        }
         else if (status==="CHANNEL_ERROR"||status==="CLOSED") setConnStatus("offline");
       });
-    return ()=>{ sb.removeChannel(ch); };
+    channelRef.current = ch;
+    return ()=>{ sb.removeChannel(ch); channelRef.current = null; };
   },[]);
+
+  // v1.4: re-track presence khi login/logout/role đổi (theo ca)
+  useEffect(()=>{
+    const ch = channelRef.current;
+    if (!ch) return;
+    if (currentUser) {
+      ch.track({
+        id: currentUser.id,
+        name: currentUser.name,
+        role: effectiveRoleRef.current || currentUser.role,
+        joinedAt: Date.now()
+      }).catch(()=>{});
+    } else {
+      ch.untrack().catch(()=>{});
+      setOnlineUsers([]);
+    }
+  },[currentUser, tickMin]); // tickMin để cập nhật role khi ca chuyển
 
   useEffect(()=>{const t=setInterval(()=>setTime(nowS()),20000);return()=>clearInterval(t);},[]);
   // Re-render mỗi 60s để effectiveRole cập nhật khi ca chuyển
@@ -3030,14 +3453,14 @@ function App(){
   if (currentUser) { effectiveRoleRef.current = effectiveRoleEarly; currentUserRef.current = currentUser; }
 
   const SCREENS={
-    dashboard:{title:"Tổng quan",       sub:`${currentShift?currentShift.name+" · "+currentShift.start_at+"–"+currentShift.end_at:"Ngoài giờ làm việc"} · ${shiftAssignments.filter(a=>a.shift_id===currentShift?.id && a.role!=="off").length} thành viên trong ca`,
+    dashboard:{title:"Tổng quan",       sub:`${currentShift?currentShift.name+" · "+currentShift.start_at+"–"+currentShift.end_at:"Ngoài giờ làm việc"} · ${shiftAssignments.filter(a=>a.shift_id===currentShift?.id && a.role!=="off").length} thành viên phân ca · 🟢 ${onlineUsers.length} đang online`,
                comp:<Dashboard orders={orders} staff={staff}/>},
     order:    {title:"Trực đơn",         sub:"Nhận & tạo đơn hàng · Tách KPI người sale",
-               comp:<OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} categories={categories} toast={toast}/>},
+               comp:<OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} categories={categories} toast={toast} shiftAssignments={shiftAssignments} currentShift={currentShift}/>},
     kitchen:  {title:"Pha chế (KDS)",    sub:"Kitchen Display System · Realtime",
                comp:<KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} toast={toast}/>},
     shipper:  {title:"Giao hàng",        sub:"Quản lý shipper & vận chuyển",
-               comp:<ShipperScreen orders={orders} setOrders={setOrders} staff={staff} currentUser={currentUser} effectiveRole={effectiveRole} toast={toast}/>},
+               comp:<ShipperScreen orders={orders} setOrders={setOrders} setProducts={setProducts} staff={staff} currentUser={currentUser} effectiveRole={effectiveRole} toast={toast}/>},
     staff:    {title:"Nhân sự & KPI",    sub:"Phân công · Theo dõi KPI · Bảng xếp hạng",
                comp:<StaffScreen orders={orders} staff={staff}/>},
     report:   {title:"Báo cáo & Log",    sub:"Tổng kết cuối ca · Xuất dữ liệu CSV",
@@ -3070,6 +3493,12 @@ function App(){
     );
   }
 
+  // v1.4: Khách hàng tự đặt — không cần PIN. Truy cập qua ?customer=1 hoặc ?qr=<tableId>
+  const urlParams = new URLSearchParams(location.search);
+  if (urlParams.has("customer") || urlParams.has("qr")) {
+    return <CustomerOrderScreen products={products} categories={categories} zones={zones} toast={toast}/>;
+  }
+
   if (!currentUser) {
     return <LoginScreen staff={staff} onLogin={handleLogin}/>;
   }
@@ -3089,7 +3518,7 @@ function App(){
   return (
     <div className="app-shell" style={{fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif"}}>
       {sbOpen && <div className="sb-overlay" onClick={()=>setSbOpen(false)}/>}
-      <Sidebar screen={activeScreen} setScreen={(s)=>{setScreen(s);setSbOpen(false);}} orders={orders} currentShift={currentShift} allowed={allowed} sbOpen={sbOpen} onClose={()=>setSbOpen(false)} onLogout={handleLogout} currentUser={currentUser} effectiveRole={effectiveRole}/>
+      <Sidebar screen={activeScreen} setScreen={(s)=>{setScreen(s);setSbOpen(false);}} orders={orders} currentShift={currentShift} allowed={allowed} sbOpen={sbOpen} onClose={()=>setSbOpen(false)} onLogout={handleLogout} currentUser={currentUser} effectiveRole={effectiveRole} onlineUsers={onlineUsers}/>
       <div className="app-main">
         <TopBar title={cur.title} sub={cur.sub} time={time} currentUser={currentUser} connStatus={connStatus} onLogout={handleLogout} onMenu={()=>setSbOpen(true)} effectiveRole={effectiveRole} currentShift={currentShift} notifEnabled={notifEnabled} onToggleNotif={toggleNotif}/>
         <div style={{flex:1,overflow:"hidden",display:"flex",minHeight:0}}>{cur.comp}</div>
