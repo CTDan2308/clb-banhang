@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CLB Quản Lý Bán Hàng v1.5.0</title>
+<title>CLB Quản Lý Bán Hàng v1.5.1</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -232,7 +232,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.5.0";
+const VERSION = "1.5.1";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -270,13 +270,14 @@ const todayS= () => { const d=new Date(); return `${String(d.getDate()).padStart
 const iSub  = o => o.items.reduce((s,i)=>s+i.p*i.qty,0);
 const iTot  = o => iSub(o)+o.dFee-o.disc;
 const nxSt  = o => {
-  if (o.st==="san_sang") return o.type==="tai_cho"?"hoan_thanh":"dang_giao";
+  // v1.5.1: san_sang cho đơn ship → KDS DỪNG, shipper sẽ pickup từ pool
+  if (o.st==="san_sang") return o.type==="tai_cho"?"hoan_thanh":null;
   return {moi:"pha_che",pha_che:"san_sang",dang_giao:"hoan_thanh"}[o.st]||null;
 };
 const nxLb  = o => ({
   moi:"▶ Bắt đầu pha",
   pha_che:"✓ Hoàn thành pha",
-  san_sang:o.type==="tai_cho"?"✓ Hoàn thành":"→ Chuyển shipper",
+  san_sang:o.type==="tai_cho"?"✓ Hoàn thành":null, // ship → null = không show button (chờ shipper)
   dang_giao:"✓ Xác nhận giao",
 }[o.st]||null);
 
@@ -1666,7 +1667,7 @@ function CustomerOrderScreen({products,categories,zones,toast}){
 /* ══════════════════════════════════════════════════════════
    KITCHEN (KDS)
 ══════════════════════════════════════════════════════════ */
-function KitchenScreen({orders,setOrders,products,setProducts,toast}){
+function KitchenScreen({orders,setOrders,products,setProducts,staff=[],toast}){
   const [recipe,setRecipe] = useState(null);
   const [now,setNow] = useState(new Date());
   useEffect(()=>{const t=setInterval(()=>setNow(new Date()),60000);return()=>clearInterval(t);},[]);
@@ -1756,6 +1757,13 @@ function KitchenScreen({orders,setOrders,products,setProducts,toast}){
                         );
                       })}
                       {o.note&&<div style={{fontSize:11,color:"var(--or)",marginTop:7,fontStyle:"italic",background:"var(--orl)",padding:"5px 9px",borderRadius:"var(--r-sm)"}}><i className="ti ti-note" style={{fontSize:11,marginRight:3}}/>{o.note}</div>}
+                      {/* v1.5.1: Đơn ship sau khi pha xong → chờ shipper nhận (KDS không advance được) */}
+                      {o.st==="san_sang" && o.type==="ship" && (
+                        <div style={{marginTop:11,padding:"8px 10px",background:o.sid?"#DCFCE7":"#FEF3C7",border:`1px solid ${o.sid?"#22C55E":"#F59E0B"}55`,borderRadius:"var(--r-sm)",display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:o.sid?"#15803D":"#92400E"}}>
+                          <span style={{fontSize:14}}>🛵</span>
+                          {o.sid ? `${staff.find(s=>s.id===o.sid)?.name||"Shipper"} sẽ tới lấy` : "Đang chờ shipper nhận đơn"}
+                        </div>
+                      )}
                       {nxLb(o)&&(
                         <button onClick={()=>advance(o)}
                           style={{width:"100%",marginTop:11,padding:"10px",background:col.btnBg,border:"none",borderRadius:"var(--r-md)",fontSize:12.5,fontWeight:800,cursor:"pointer",color:col.btnC,letterSpacing:.3,boxShadow:"var(--sh-sm)",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
@@ -3930,7 +3938,7 @@ function App(){
     order:    {title:"Trực đơn",         sub:"Nhận & tạo đơn hàng · Tách KPI người sale",
                comp:<OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} categories={categories} toast={toast} shiftAssignments={shiftAssignments} currentShift={currentShift}/>},
     kitchen:  {title:"Pha chế (KDS)",    sub:"Kitchen Display System · Realtime",
-               comp:<KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} toast={toast}/>},
+               comp:<KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} toast={toast}/>},
     shipper:  {title:"Giao hàng",        sub:"Quản lý shipper & vận chuyển",
                comp:<ShipperScreen orders={orders} setOrders={setOrders} setProducts={setProducts} staff={staff} currentUser={currentUser} effectiveRole={effectiveRole} toast={toast}/>},
     staff:    {title:"Nhân sự & KPI",    sub:"Phân công · Theo dõi KPI · Bảng xếp hạng",
@@ -4011,7 +4019,7 @@ function App(){
   if (effectiveRole === "pha_che") {
     return <RoleAppShell roleKey="pha_che" title="PHA CHẾ — KDS" icon="☕" bgColor="linear-gradient(135deg,#1E40AF,#1E3A8A)"
       currentUser={currentUser} currentShift={currentShift} connStatus={connStatus} onLogout={handleLogout} onlineUsers={onlineUsers}>
-      <KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} toast={toast}/>
+      <KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} toast={toast}/>
     </RoleAppShell>;
   }
 
