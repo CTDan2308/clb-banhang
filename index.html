@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CLB Quản Lý Bán Hàng v1.5.0-rc2 (preview)</title>
+<title>CLB Quản Lý Bán Hàng v1.5.0-rc3 (preview)</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -231,7 +231,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.5.0-rc2";
+const VERSION = "1.5.0-rc3";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -2231,6 +2231,10 @@ function ShipperScreen({orders,setOrders,setProducts,staff,currentUser,effective
     {l:"Hoàn hàng",   v:returned.length,ic:"ti-arrow-back",  bg:"#fce7f3",tc:"#9d174d"},
   ];
 
+  // v1.5: tách wait thành unassigned (pool tự nhận) + assigned (đã có shipper)
+  const waitUnassigned = wait.filter(o=>o.sid==null);
+  const waitAssigned   = wait.filter(o=>o.sid!=null);
+
   return (
     <div style={{flex:1,overflowY:"auto",padding:16,background:"var(--bg)"}}>
       <div className="grid-stats-4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
@@ -2244,6 +2248,50 @@ function ShipperScreen({orders,setOrders,setProducts,staff,currentUser,effective
           </div>
         ))}
       </div>
+
+      {/* v1.5: HERO — Đơn cần phân shipper (nổi bật) */}
+      {canAssign && waitUnassigned.length>0 && (
+        <div style={{background:"linear-gradient(135deg,#FFF4F0 0%,#FFEDE5 100%)",border:"2px solid var(--or)",borderRadius:12,padding:14,marginBottom:14,boxShadow:"0 4px 16px rgba(238,77,45,.12)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10}}>
+            <div style={{width:36,height:36,borderRadius:"50%",background:"var(--or-grad)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,boxShadow:"var(--sh-or)",animation:"pulse 2s infinite"}}>🚨</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:800,color:"var(--or)"}}>{waitUnassigned.length} đơn cần phân shipper</div>
+              <div style={{fontSize:10.5,color:"var(--text2)"}}>Tap avatar shipper bên dưới để gán. Shipper cũng có thể tự nhận trong app của họ.</div>
+            </div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {waitUnassigned.map(o=>(
+              <div key={o.id} style={{background:"#fff",borderRadius:10,padding:"10px 12px",border:"1px solid var(--bd)",boxShadow:"var(--sh-sm)"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontFamily:"ui-monospace,monospace",fontSize:12,fontWeight:800,color:"var(--or)"}}>{o.id}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:"var(--text)"}}>{o.cus}</span>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:800,color:"var(--or)"}}>+{fmt(o.dFee||0)}</span>
+                </div>
+                <div style={{fontSize:11.5,color:"var(--text2)",marginBottom:9,display:"flex",alignItems:"center",gap:4}}>
+                  <i className="ti ti-map-pin" style={{fontSize:13,color:"var(--or)"}}/>{o.adr||"—"}
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <span style={{fontSize:10.5,color:"var(--mut)",fontWeight:700,alignSelf:"center",marginRight:4}}>Gán:</span>
+                  {shippers.map(sh=>{
+                    const busy=orders.some(x=>x.sid===sh.id&&["da_lay","dang_giao"].includes(x.st));
+                    return (
+                      <button key={sh.id} onClick={()=>assign(o.id,sh.id)} title={busy?"Đang giao đơn khác":"Sẵn sàng"}
+                        style={{display:"flex",alignItems:"center",gap:5,padding:"6px 10px",background:busy?"#FEF3C7":"#DCFCE7",border:`1.5px solid ${busy?"#F59E0B":"#22C55E"}`,borderRadius:"var(--r-pill)",cursor:"pointer",fontSize:11.5,fontWeight:700,color:busy?"#92400E":"#15803D"}}>
+                        <div style={{width:22,height:22,borderRadius:"50%",background:"#fff",color:busy?"#92400E":"#15803D",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800}}>{inits(sh.name)}</div>
+                        {sh.name.split(" ").slice(-1)[0]}
+                        {busy && <span style={{fontSize:9}}>🛵</span>}
+                      </button>
+                    );
+                  })}
+                  {shippers.length===0&&<span style={{fontSize:10.5,color:"var(--err)",fontStyle:"italic"}}>Không có shipper trong ca — kiểm tra Lịch ca</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{padding:14,marginBottom:14}}>
         <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -3300,6 +3348,45 @@ function GeneralSettings({zones,setZones,shift,setShift,staff,products,toast}){
 }
 
 /* ══════════════════════════════════════════════════════════
+   ROLE APP SHELL (v1.5) — vỏ standalone cho từng role
+   Header tối giản (logout + status), KHÔNG sidebar/topbar admin.
+   Dùng cho pha_che, truc_don (shipper có vỏ riêng ShipperApp).
+══════════════════════════════════════════════════════════ */
+function RoleAppShell({roleKey,title,icon,bgColor,currentUser,currentShift,connStatus,onLogout,onlineUsers=[],children}){
+  return (
+    <div style={{height:"100vh",display:"flex",flexDirection:"column",fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif",overflow:"hidden",background:"#F5F5F5"}}>
+      {/* App header */}
+      <div style={{background:bgColor||"#0F172A",color:"#fff",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
+          <span style={{fontSize:18}}>{icon}</span>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:800,letterSpacing:.5,lineHeight:1.1}}>{title}</div>
+            <div style={{fontSize:10,opacity:.7,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{currentUser.name}{currentShift?` · ${currentShift.name}`:""}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {onlineUsers.length>0 && (
+            <div style={{fontSize:10.5,display:"flex",alignItems:"center",gap:4,opacity:.85,padding:"3px 8px",background:"rgba(255,255,255,.08)",borderRadius:"var(--r-pill)"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 6px #22c55e"}}/>
+              {onlineUsers.length}
+            </div>
+          )}
+          <div style={{fontSize:10.5,display:"flex",alignItems:"center",gap:4,opacity:.85}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:connStatus==="live"?"#22c55e":"#ef4444"}}/>
+            {connStatus==="live"?"Online":"Offline"}
+          </div>
+          <button onClick={onLogout} style={{background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",color:"#fff",fontSize:11,padding:"5px 11px",borderRadius:"var(--r-pill)",cursor:"pointer",fontWeight:600}}>
+            <i className="ti ti-logout" style={{fontSize:12,marginRight:4}}/>Thoát
+          </button>
+        </div>
+      </div>
+      {/* Content */}
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0}}>{children}</div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
    ROOT APP
 ══════════════════════════════════════════════════════════ */
 function App(){
@@ -3815,6 +3902,22 @@ function App(){
       cancel={cancelSh} doReturn={doReturnSh}
       onLogout={handleLogout} toast={toast}
       connStatus={connStatus} currentShift={currentShift} onlineUsers={onlineUsers}/>;
+  }
+
+  // v1.5: Pha chế có app riêng (KitchenScreen + shell tối giản)
+  if (effectiveRole === "pha_che") {
+    return <RoleAppShell roleKey="pha_che" title="PHA CHẾ — KDS" icon="☕" bgColor="linear-gradient(135deg,#1E40AF,#1E3A8A)"
+      currentUser={currentUser} currentShift={currentShift} connStatus={connStatus} onLogout={handleLogout} onlineUsers={onlineUsers}>
+      <KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} toast={toast}/>
+    </RoleAppShell>;
+  }
+
+  // v1.5: Trực đơn có app riêng (OrderScreen + shell tối giản)
+  if (effectiveRole === "truc_don") {
+    return <RoleAppShell roleKey="truc_don" title="TRỰC ĐƠN" icon="📋" bgColor="linear-gradient(135deg,#C73D22,#A12714)"
+      currentUser={currentUser} currentShift={currentShift} connStatus={connStatus} onLogout={handleLogout} onlineUsers={onlineUsers}>
+      <OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} categories={categories} toast={toast} shiftAssignments={shiftAssignments} currentShift={currentShift}/>
+    </RoleAppShell>;
   }
 
   // Lọc màn theo role thực tế
