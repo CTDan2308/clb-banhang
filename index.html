@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>CLB Quản Lý Bán Hàng v1.6.0</title>
+<title>CLB Quản Lý Bán Hàng v1.6.1</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -232,7 +232,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.6.0";
+const VERSION = "1.6.1";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -270,7 +270,7 @@ const todayS= () => { const d=new Date(); return `${String(d.getDate()).padStart
 const iSub  = o => o.items.reduce((s,i)=>s+i.p*i.qty,0);
 const iTot  = o => iSub(o)+o.dFee-o.disc;
 const nxSt  = o => {
-  // v1.6.0: san_sang cho đơn ship → KDS DỪNG, shipper sẽ pickup từ pool
+  // v1.6.1: san_sang cho đơn ship → KDS DỪNG, shipper sẽ pickup từ pool
   if (o.st==="san_sang") return o.type==="tai_cho"?"hoan_thanh":null;
   return {moi:"pha_che",pha_che:"san_sang",dang_giao:"hoan_thanh"}[o.st]||null;
 };
@@ -816,7 +816,8 @@ function TopBar({title,sub,time,currentUser,connStatus,onLogout,onMenu,effective
 /* ══════════════════════════════════════════════════════════
    DASHBOARD
 ══════════════════════════════════════════════════════════ */
-function Dashboard({orders,staff}){
+function Dashboard({orders,staff,currentUser,deleteOrder}){
+  const isAdmin = currentUser?.role === "admin";
   const done  = orders.filter(o=>o.st==="hoan_thanh");
   const rev   = done.reduce((s,o)=>s+iTot(o),0);
   const ship  = orders.filter(o=>o.type==="ship"&&o.st==="hoan_thanh");
@@ -891,16 +892,20 @@ function Dashboard({orders,staff}){
       </div>
 
       <div className="card" style={{padding:18}}>
-        <div style={{fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}><i className="ti ti-history" style={{fontSize:16,color:"var(--or)"}}/>Đơn hàng gần đây</div>
+        <div style={{fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+          <i className="ti ti-history" style={{fontSize:16,color:"var(--or)"}}/>
+          Đơn hàng gần đây
+          {isAdmin && <span style={{fontSize:10,fontWeight:600,color:"var(--mut)",marginLeft:4}}>· Hiển thị {Math.min(orders.length,30)}/{orders.length} đơn · Admin có quyền xoá</span>}
+        </div>
         <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
           <thead>
-            <tr style={{background:"#FAFAFA"}}>{["Mã đơn","Khách hàng","Giờ","Sản phẩm","Tổng","Loại","Người KPI","Trạng thái"].map(h=>(
+            <tr style={{background:"#FAFAFA"}}>{[...["Mã đơn","Khách hàng","Giờ","Sản phẩm","Tổng","Loại","Người KPI","Trạng thái"], ...(isAdmin?["Hành động"]:[])].map(h=>(
               <th key={h} style={{padding:"9px 10px",textAlign:"left",fontSize:10,color:"var(--mut)",fontWeight:700,borderBottom:"1px solid var(--bd)",letterSpacing:.4,textTransform:"uppercase"}}>{h}</th>
             ))}</tr>
           </thead>
           <tbody>
-            {[...orders].reverse().slice(0,6).map(o=>(
+            {[...orders].reverse().slice(0, isAdmin ? 30 : 6).map(o=>(
               <tr key={o.id} style={{borderBottom:"1px solid #F5F5F5",transition:"background .15s"}}
                   onMouseOver={e=>e.currentTarget.style.background="#FAFAFA"}
                   onMouseOut={e=>e.currentTarget.style.background="transparent"}>
@@ -912,10 +917,20 @@ function Dashboard({orders,staff}){
                 <td style={{padding:"10px"}}><TPill type={o.type}/></td>
                 <td style={{padding:"10px",color:"var(--text2)",fontSize:11}}>{staff.find(s=>s.id===o.kpi)?.name||"—"}</td>
                 <td style={{padding:"10px"}}><Bdg s={o.st}/></td>
+                {isAdmin && (
+                  <td style={{padding:"10px"}}>
+                    <button onClick={()=>deleteOrder(o.id)} title="Xoá vĩnh viễn đơn này"
+                      style={{background:"#FEE2E2",border:"1px solid #FCA5A5",color:"#B91C1C",padding:"4px 9px",borderRadius:5,fontSize:11,fontWeight:700,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:3}}
+                      onMouseOver={e=>e.currentTarget.style.background="#FECACA"}
+                      onMouseOut={e=>e.currentTarget.style.background="#FEE2E2"}>
+                      <i className="ti ti-trash" style={{fontSize:12}}/>Xoá
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
             {orders.length===0&&(
-              <tr><td colSpan={8} style={{padding:"32px 10px",textAlign:"center",color:"var(--mut2)",fontSize:12}}>
+              <tr><td colSpan={isAdmin?9:8} style={{padding:"32px 10px",textAlign:"center",color:"var(--mut2)",fontSize:12}}>
                 <i className="ti ti-clipboard-off" style={{fontSize:32,display:"block",marginBottom:6,opacity:.5}}/>
                 Chưa có đơn hàng nào
               </td></tr>
@@ -989,7 +1004,8 @@ function KpiPicker({staff,value,onChange,inShiftIds,inp}){
   );
 }
 
-function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zones,categories,toast,shiftAssignments=[],currentShift=null}){
+function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zones,categories,toast,shiftAssignments=[],currentShift=null,deleteOrder=null}){
+  const isAdmin = currentUser?.role === "admin";
   const EC = {cus:"",ph:"",type:"tai_cho",adr:"",zone:0,kpi:currentUser.id,pay:"cash",disc:0,dT:"fixed",note:"",items:[]};
   const cats = categories.length ? categories : Object.keys(CL_FALLBACK).map((k,i)=>({key:k,label:CL_FALLBACK[k],sort:i}));
   const [cat,setCat]   = useState(cats[0]?.key || "pha_che");
@@ -1371,12 +1387,22 @@ function OrderScreen({orders,setOrders,products,setProducts,staff,currentUser,zo
                     <span style={{fontSize:15,fontWeight:800,color:"var(--or)"}}>{fmt(iTot(o))}</span>
                     <span className="chip" style={{marginLeft:6,fontSize:10}}>{o.pay==="qr"?"📱 QR":"💵 Mặt"}</span>
                   </div>
-                  <button onClick={()=>cancel(o.id)} className="btn-ghost"
-                    style={{fontSize:11,padding:"5px 11px",borderRadius:"var(--r-sm)",color:"var(--err)",borderColor:"#FCA5A5"}}
-                    onMouseOver={e=>{e.currentTarget.style.background="var(--err-bg)";e.currentTarget.style.color="var(--err)"}}
-                    onMouseOut={e=>{e.currentTarget.style.background="#fff";e.currentTarget.style.color="var(--err)"}}>
-                    <i className="ti ti-x" style={{fontSize:12,marginRight:2}}/>Huỷ
-                  </button>
+                  <div style={{display:"flex",gap:5}}>
+                    <button onClick={()=>cancel(o.id)} className="btn-ghost"
+                      style={{fontSize:11,padding:"5px 11px",borderRadius:"var(--r-sm)",color:"var(--err)",borderColor:"#FCA5A5"}}
+                      onMouseOver={e=>{e.currentTarget.style.background="var(--err-bg)";e.currentTarget.style.color="var(--err)"}}
+                      onMouseOut={e=>{e.currentTarget.style.background="#fff";e.currentTarget.style.color="var(--err)"}}>
+                      <i className="ti ti-x" style={{fontSize:12,marginRight:2}}/>Huỷ
+                    </button>
+                    {isAdmin && deleteOrder && (
+                      <button onClick={()=>deleteOrder(o.id)} title="Admin: xoá vĩnh viễn"
+                        style={{fontSize:11,padding:"5px 11px",borderRadius:"var(--r-sm)",background:"#FEE2E2",border:"1px solid #FCA5A5",color:"#B91C1C",cursor:"pointer",fontWeight:700}}
+                        onMouseOver={e=>e.currentTarget.style.background="#FECACA"}
+                        onMouseOut={e=>e.currentTarget.style.background="#FEE2E2"}>
+                        <i className="ti ti-trash" style={{fontSize:12}}/>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1765,7 +1791,7 @@ function KitchenScreen({orders,setOrders,products,setProducts,staff=[],toast}){
                         );
                       })}
                       {o.note&&<div style={{fontSize:11,color:"var(--or)",marginTop:7,fontStyle:"italic",background:"var(--orl)",padding:"5px 9px",borderRadius:"var(--r-sm)"}}><i className="ti ti-note" style={{fontSize:11,marginRight:3}}/>{o.note}</div>}
-                      {/* v1.6.0: Đơn ship sau khi pha xong → chờ shipper nhận (KDS không advance được) */}
+                      {/* v1.6.1: Đơn ship sau khi pha xong → chờ shipper nhận (KDS không advance được) */}
                       {o.st==="san_sang" && o.type==="ship" && (
                         <div style={{marginTop:11,padding:"8px 10px",background:o.sid?"#DCFCE7":"#FEF3C7",border:`1px solid ${o.sid?"#22C55E":"#F59E0B"}55`,borderRadius:"var(--r-sm)",display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:o.sid?"#15803D":"#92400E"}}>
                           <span style={{fontSize:14}}>🛵</span>
@@ -3858,6 +3884,27 @@ function App(){
     setCurrentUser(null);
   };
 
+  // v1.6.1: Admin-only delete order (PERMANENT, không phải huỷ)
+  // Hoàn kho nếu đơn chưa kết thúc, rồi xoá hẳn khỏi DB (qua syncToDb diff)
+  const deleteOrder = (oid) => {
+    if (currentUserRef.current?.role !== "admin") {
+      toast("Chỉ admin mới được xoá hẳn đơn","error");
+      return;
+    }
+    const o = ordersRef.current.find(x=>x.id===oid);
+    if (!o) return;
+    const total = (o.items||[]).reduce((s,i)=>s+i.qty*i.p,0) + (o.dFee||0) - (o.disc||0);
+    const stLabel = ST[o.st]?.label || o.st;
+    const msg = `XOÁ VĨNH VIỄN đơn ${o.id}?\n\nKhách: ${o.cus}\nTổng: ${fmt(total)}\nTrạng thái: ${stLabel}\n\n${["huy","hoan_thanh","hoan_hang"].includes(o.st)?"":"⚠ Đơn chưa kết thúc — sẽ tự hoàn kho.\n\n"}Hành động này KHÔNG THỂ phục hồi.`;
+    if (!confirm(msg)) return;
+    // Hoàn kho nếu chưa kết thúc
+    if (!["huy","hoan_thanh","hoan_hang"].includes(o.st)) {
+      setProducts(ps=>ps.map(p=>{const ci=o.items.find(i=>i.pid===p.id);return ci?{...p,stock:p.stock+ci.qty}:p;}));
+    }
+    setOrders(os=>os.filter(x=>x.id!==oid));
+    toast(`🗑 Đã xoá vĩnh viễn đơn ${oid}`,"warn");
+  };
+
   // ── Realtime subscriptions ──
   useEffect(()=>{
     const mergeProduct = r => {
@@ -4096,9 +4143,9 @@ function App(){
 
   const SCREENS={
     dashboard:{title:"Tổng quan",       sub:`${currentShift?currentShift.name+" · "+currentShift.start_at+"–"+currentShift.end_at:"Ngoài giờ làm việc"} · ${shiftAssignments.filter(a=>a.shift_id===currentShift?.id && a.role!=="off").length} thành viên phân ca · 🟢 ${onlineUsers.length} đang online`,
-               comp:<Dashboard orders={orders} staff={staff}/>},
+               comp:<Dashboard orders={orders} staff={staff} currentUser={currentUser} deleteOrder={deleteOrder}/>},
     order:    {title:"Trực đơn",         sub:"Nhận & tạo đơn hàng · Tách KPI người sale",
-               comp:<OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} categories={categories} toast={toast} shiftAssignments={shiftAssignments} currentShift={currentShift}/>},
+               comp:<OrderScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} currentUser={currentUser} zones={zones} categories={categories} toast={toast} shiftAssignments={shiftAssignments} currentShift={currentShift} deleteOrder={deleteOrder}/>},
     kitchen:  {title:"Pha chế (KDS)",    sub:"Kitchen Display System · Realtime",
                comp:<KitchenScreen orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} staff={staff} toast={toast}/>},
     shipper:  {title:"Giao hàng",        sub:"Quản lý shipper & vận chuyển",
