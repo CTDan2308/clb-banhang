@@ -206,7 +206,7 @@ const ST = {
   hoan_hang:  {label:"Hoàn hàng",  bg:"#fce7f3",color:"#9d174d"},
   huy:        {label:"Đã huỷ",     bg:"#fee2e2",color:"#b91c1c"},
 };
-const RL = {truong_ca:"Trưởng ca",truc_don:"Trực đơn",pha_che:"Pha chế",shipper:"Shipper",admin:"Admin"};
+const RL = {truong_ca:"Trưởng ca",truc_don:"Trực đơn",pha_che:"Pha chế",shipper:"Shipper",admin:"Admin",off:"Ngoài ca"};
 const RD = {
   truong_ca:"Giám sát toàn bộ ca, phân công, báo cáo",
   truc_don: "Tạo đơn, tiếp nhận khách, thu tiền",
@@ -220,6 +220,14 @@ const RC = {
   pha_che:  ["#D97706","#FFFBEB"],
   shipper:  ["#16A34A","#F0FDF4"],
   admin:    ["#7C3AED","#F5F3FF"],
+  off:      ["#94A3B8","#F1F5F9"],
+};
+/* v1.7: helper — role THỰC TẾ trong 1 ca cụ thể (admin luôn admin) */
+const roleInShift = (staffId, staffRole, shiftId, shiftAssignments) => {
+  if (staffRole === "admin") return "admin";
+  if (!shiftId) return "off";
+  const a = shiftAssignments.find(x => x.shift_id===shiftId && x.staff_id===staffId);
+  return a ? a.role : "off";
 };
 const CL_FALLBACK = {pha_che:"☕ Đồ pha chế",san_co:"📦 Đồ sẵn có",kho:"⚡ Dùng ngay"};
 
@@ -232,7 +240,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.6.1";
+const VERSION = "1.7.0";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -731,10 +739,11 @@ function Sidebar({screen,setScreen,orders,currentShift,allowed,sbOpen,onClose,on
         {onlineUsers.length>0 && (
           <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
             {onlineUsers.slice(0,6).map(u=>{
-              const [c,b] = RC[u.role]||["#475569","#f5f5f5"];
+              const off = u.role==="off" || !u.role;
+              const [c,b] = off ? ["#64748B","#F1F5F9"] : (RC[u.role]||["#475569","#f5f5f5"]);
               return (
-                <span key={u.id} title={`${u.name} · ${RL[u.role]||u.role}`} style={{fontSize:10,padding:"2px 7px",borderRadius:"var(--r-pill)",background:b,color:c,fontWeight:700,whiteSpace:"nowrap"}}>
-                  {u.name.split(" ").slice(-1)[0]}
+                <span key={u.id} title={`${u.name} · ${off?"Ngoài ca":(RL[u.role]||u.role)}`} style={{fontSize:10,padding:"2px 7px",borderRadius:"var(--r-pill)",background:b,color:c,fontWeight:700,whiteSpace:"nowrap",opacity:off?.7:1,fontStyle:off?"italic":"normal"}}>
+                  {u.name.split(" ").slice(-1)[0]}{off && " ·"}
                 </span>
               );
             })}
@@ -2534,19 +2543,26 @@ function ShipperScreen({orders,setOrders,setProducts,staff,currentUser,effective
 /* ══════════════════════════════════════════════════════════
    STAFF SCREEN
 ══════════════════════════════════════════════════════════ */
-function StaffScreen({orders,staff}){
+function StaffScreen({orders,staff,currentShift,shiftAssignments=[]}){
   const kpi=sid=>{
     const mine=orders.filter(o=>o.kpi===sid&&o.st==="hoan_thanh");
     return {cnt:mine.length,rev:mine.reduce((s,o)=>s+iTot(o),0)};
   };
+  // v1.7: role thực tế trong ca hiện tại
+  const shiftRole = s => roleInShift(s.id, s.role, currentShift?.id, shiftAssignments);
   return (
     <div style={{flex:1,overflowY:"auto",padding:16,background:"var(--bg)"}}>
+      <div style={{fontSize:11,color:"var(--mut)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+        <i className="ti ti-info-circle" style={{fontSize:13,color:"var(--or)"}}/>
+        {currentShift ? <>Đếm theo <b>{currentShift.name}</b> ({currentShift.start_at}–{currentShift.end_at}) — chỉ nhân sự được phân ca</> : <>Ngoài giờ làm việc — không có ca hiện hành</>}
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}}>
         {["truong_ca","truc_don","pha_che","shipper","admin"].map(role=>{
           const [tc]=RC[role]||["#475569"];
+          const cnt = staff.filter(s=>shiftRole(s)===role).length;
           return (
             <div key={role} className="card" style={{padding:"14px",textAlign:"center"}}>
-              <div style={{fontSize:24,fontWeight:800,color:tc,marginBottom:2}}>{staff.filter(s=>s.role===role).length}</div>
+              <div style={{fontSize:24,fontWeight:800,color:tc,marginBottom:2}}>{cnt}</div>
               <div style={{fontSize:11,color:"#767676"}}>{RL[role]}</div>
             </div>
           );
@@ -2564,17 +2580,29 @@ function StaffScreen({orders,staff}){
           </thead>
           <tbody>
             {staff.map(s=>{
-              const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+              const sr = shiftRole(s);                 // role thực tế ca này
+              const off = sr === "off";
+              const [tc,bg] = off ? ["#64748B","#F1F5F9"] : (RC[sr]||["#475569","#f5f5f5"]);
               const k=kpi(s.id);
+              const switched = !off && sr !== s.role && s.role !== "admin";
               return (
-                <tr key={s.id} style={{borderBottom:"1px solid #f8f8f8",opacity:s.active?1:.55}}>
+                <tr key={s.id} style={{borderBottom:"1px solid #f8f8f8",opacity:s.active && !off ? 1 : .55}}>
                   <td style={{padding:"9px 8px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <div style={{width:30,height:30,borderRadius:"50%",background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:tc,fontWeight:800,flexShrink:0}}>{inits(s.name)}</div>
                       <span style={{color:"#212121",fontWeight:700}}>{s.name}</span>
                     </div>
                   </td>
-                  <td style={{padding:"9px 8px"}}><span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:bg,color:tc,fontWeight:700}}>{RL[s.role]}</span></td>
+                  <td style={{padding:"9px 8px"}}>
+                    {off ? (
+                      <span title={`Mặc định: ${RL[s.role]||s.role}`} style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"#F1F5F9",color:"#64748B",fontWeight:700,fontStyle:"italic"}}>Ngoài ca</span>
+                    ) : (
+                      <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                        <span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:bg,color:tc,fontWeight:700}}>{RL[sr]}</span>
+                        {switched && <span title={`Mặc định: ${RL[s.role]||s.role}`} style={{fontSize:9,padding:"1px 5px",borderRadius:"var(--r-pill)",background:"#FFF4F0",color:"var(--or)",fontWeight:800}}>theo ca</span>}
+                      </span>
+                    )}
+                  </td>
                   <td style={{padding:"9px 8px",color:"#767676"}}>{s.checkin}</td>
                   <td style={{padding:"9px 8px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:4}}>
@@ -2595,16 +2623,18 @@ function StaffScreen({orders,staff}){
       <div className="card" style={{padding:16}}>
         <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>🏆 Bảng xếp hạng KPI</div>
         {[...staff].filter(s=>s.active).sort((a,b)=>kpi(b.id).rev-kpi(a.id).rev).map((s,i)=>{
-          const [tc,bg]=RC[s.role]||["#475569","#f5f5f5"];
+          const sr = shiftRole(s);
+          const off = sr === "off";
+          const [tc,bg] = off ? ["#64748B","#F1F5F9"] : (RC[sr]||["#475569","#f5f5f5"]);
           const k=kpi(s.id);
           const medal=["🥇","🥈","🥉"][i]||`#${i+1}`;
           return (
-            <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #f8f8f8"}}>
+            <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #f8f8f8",opacity:off?.65:1}}>
               <span style={{fontSize:i<3?20:13,minWidth:28,textAlign:"center"}}>{medal}</span>
               <div style={{width:30,height:30,borderRadius:"50%",background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:tc,fontWeight:800}}>{inits(s.name)}</div>
               <div style={{flex:1}}>
                 <div style={{fontSize:12.5,color:"#212121",fontWeight:700}}>{s.name}</div>
-                <div style={{fontSize:10,color:"#767676"}}>{RL[s.role]}</div>
+                <div style={{fontSize:10,color:off?"#94a3b8":"#767676",fontStyle:off?"italic":"normal"}}>{off?"Ngoài ca":RL[sr]}</div>
               </div>
               <span style={{fontSize:11,color:"#767676"}}>{k.cnt} đơn</span>
               <span style={{fontSize:13,fontWeight:800,color:k.rev>0?"#15803d":"#999",minWidth:100,textAlign:"right"}}>{k.rev>0?fmt(k.rev):"—"}</span>
@@ -4151,7 +4181,7 @@ function App(){
     shipper:  {title:"Giao hàng",        sub:"Quản lý shipper & vận chuyển",
                comp:<ShipperScreen orders={orders} setOrders={setOrders} setProducts={setProducts} staff={staff} currentUser={currentUser} effectiveRole={effectiveRole} toast={toast}/>},
     staff:    {title:"Nhân sự & KPI",    sub:"Phân công · Theo dõi KPI · Bảng xếp hạng",
-               comp:<StaffScreen orders={orders} staff={staff}/>},
+               comp:<StaffScreen orders={orders} staff={staff} currentShift={currentShift} shiftAssignments={shiftAssignments}/>},
     report:   {title:"Báo cáo & Log",    sub:"Tổng kết cuối ca · Xuất dữ liệu CSV",
                comp:<ReportScreen orders={orders} staff={staff} products={products} shift={currentShift?{name:currentShift.name,start:currentShift.start_at,end:currentShift.end_at}:shift} toast={toast}/>},
     settings: {title:"Cài đặt",          sub:"Quản lý nhân sự, sản phẩm, danh mục, lịch ca",
