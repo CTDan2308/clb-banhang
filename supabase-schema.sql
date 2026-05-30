@@ -28,8 +28,15 @@ CREATE TABLE IF NOT EXISTS staff (
   checkin    TEXT,
   active     BOOLEAN NOT NULL DEFAULT TRUE,
   pin        TEXT,
+  username   TEXT,
+  telegram_chat_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- v1.8: thêm column nếu DB cũ
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE staff ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS staff_username_uniq ON staff(LOWER(username)) WHERE username IS NOT NULL AND username <> '';
 
 CREATE TABLE IF NOT EXISTS orders (
   num        BIGINT PRIMARY KEY,
@@ -166,13 +173,13 @@ ALTER TABLE shift_assignments REPLICA IDENTITY FULL;
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM staff) THEN
-    INSERT INTO staff (id,name,role,checkin,active,pin) VALUES
-      (1,'Hoàng Khánh','truong_ca','07:45',true,'1111'),
-      (2,'Nguyễn Hà',  'truc_don', '07:55',true,'2222'),
-      (3,'Trần Minh',  'pha_che',  '08:00',true,'3333'),
-      (4,'Lê Ngọc',    'pha_che',  '08:02',true,'4444'),
-      (5,'Phạm Tuấn',  'shipper',  '08:10',true,'5555'),
-      (6,'Vũ Linh',    'shipper',  '08:15',true,'6666');
+    INSERT INTO staff (id,name,role,checkin,active,pin,username) VALUES
+      (1,'Hoàng Khánh','truong_ca','07:45',true,'1111','khanh'),
+      (2,'Nguyễn Hà',  'truc_don', '07:55',true,'2222','ha'),
+      (3,'Trần Minh',  'pha_che',  '08:00',true,'3333','minh'),
+      (4,'Lê Ngọc',    'pha_che',  '08:02',true,'4444','ngoc'),
+      (5,'Phạm Tuấn',  'shipper',  '08:10',true,'5555','tuan'),
+      (6,'Vũ Linh',    'shipper',  '08:15',true,'6666','linh');
   END IF;
 END $$;
 

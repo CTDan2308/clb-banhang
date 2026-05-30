@@ -240,7 +240,7 @@ const ROLE_PERMS = {
   admin:     ["dashboard","order","kitchen","shipper","staff","report","settings"],
   off:       [],
 };
-const VERSION = "1.7.0";
+const VERSION = "1.8.0";
 
 /* Tính ca hiện tại dựa vào giờ phút (handle overnight shifts) */
 const hmToMin = s => { const [h,m] = (s||"0:0").split(":").map(Number); return h*60+(m||0); };
@@ -292,6 +292,36 @@ const nxLb  = o => ({
 const LS = {
   get:(k,fb)=>{try{const v=localStorage.getItem("clb_"+k);return v?JSON.parse(v):fb;}catch(e){return fb;}},
   set:(k,v)=>{try{localStorage.setItem("clb_"+k,JSON.stringify(v));}catch(e){}},
+};
+
+/* v1.8: Telegram Bot helpers — token lưu localStorage, chỉ device admin/trưởng ca cấu hình */
+const TG = {
+  getToken: ()=>localStorage.getItem("clb_tg_token")||"",
+  setToken: t=>{ if(t) localStorage.setItem("clb_tg_token",t); else localStorage.removeItem("clb_tg_token"); },
+  isOn: ()=>!!localStorage.getItem("clb_tg_token"),
+  send: async (chatId, text)=>{
+    const token = TG.getToken();
+    if (!token || !chatId) return {ok:false,reason:"missing token or chat_id"};
+    try{
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`,{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({chat_id:chatId, text, parse_mode:"HTML", disable_web_page_preview:true})
+      });
+      const j = await res.json();
+      return j;
+    }catch(e){ return {ok:false,error:String(e)}; }
+  },
+  getMe: async ()=>{
+    const token = TG.getToken(); if (!token) return null;
+    try{ const r = await fetch(`https://api.telegram.org/bot${token}/getMe`); return await r.json(); }
+    catch(e){ return {ok:false,error:String(e)}; }
+  },
+  // Leader election: client với user.id thấp nhất trong onlineUsers (đang trong ca) sẽ là người gửi noti khi event không có actor rõ ràng
+  isLeader: (currentUserId, onlineUsers)=>{
+    if (!currentUserId || !onlineUsers?.length) return false;
+    const ids = onlineUsers.map(u=>u.id).filter(Boolean).sort((a,b)=>a-b);
+    return ids[0] === currentUserId;
+  },
 };
 
 /* ══════════════════════════════════════════════════════════
@@ -358,15 +388,27 @@ function Toast({list,dismiss}){
    LOGIN SCREEN (PIN)
 ══════════════════════════════════════════════════════════ */
 function LoginScreen({staff,onLogin}){
+  const [username,setUsername] = useState(()=>localStorage.getItem("lastUsername")||"");
   const [pin,setPin] = useState("");
   const [err,setErr] = useState("");
   const [shake,setShake] = useState(false);
+  const unameRef = useRef(null);
 
   const tryLogin = (val) => {
-    const u = staff.find(s=>s.pin===val && s.active);
-    if (u) onLogin(u);
-    else {
-      setErr("Mã PIN không đúng hoặc tài khoản đã ngừng hoạt động");
+    const uname = (username||"").trim().toLowerCase();
+    if (!uname) {
+      setErr("Hãy nhập tên đăng nhập");
+      setShake(true); setTimeout(()=>setShake(false),400);
+      unameRef.current?.focus();
+      setTimeout(()=>setPin(""),300);
+      return;
+    }
+    const u = staff.find(s=>(s.username||"").toLowerCase()===uname && s.pin===val && s.active);
+    if (u) {
+      localStorage.setItem("lastUsername", username.trim());
+      onLogin(u);
+    } else {
+      setErr("Sai tên đăng nhập hoặc PIN, hoặc tài khoản đã ngừng hoạt động");
       setShake(true); setTimeout(()=>setShake(false),400);
       setTimeout(()=>setPin(""),300);
     }
@@ -381,16 +423,17 @@ function LoginScreen({staff,onLogin}){
   const clear = () => { setPin(""); setErr(""); };
   const back  = () => { setPin(p=>p.slice(0,-1)); setErr(""); };
 
-  // Keyboard support
+  // Keyboard support — chỉ active khi không focus vào input username
   useEffect(()=>{
     const h = e => {
+      if (document.activeElement === unameRef.current) return; // để gõ username tự do
       if (/^[0-9]$/.test(e.key)) press(e.key);
       else if (e.key==="Backspace") back();
       else if (e.key==="Escape") clear();
     };
     window.addEventListener("keydown",h);
     return ()=>window.removeEventListener("keydown",h);
-  },[pin]);
+  },[pin,username]);
 
   const numBtn = {padding:"18px 0",fontSize:24,fontWeight:600,background:"#FAFAFA",border:"1px solid #F0F0F0",borderRadius:"var(--r-md)",cursor:"pointer",color:"var(--text)",transition:"all .12s var(--ease)",userSelect:"none"};
   const auxBtn = {padding:"18px 0",fontSize:14,fontWeight:600,background:"#fff",border:"1px solid #F0F0F0",borderRadius:"var(--r-md)",cursor:"pointer",color:"var(--mut)",transition:"all .12s var(--ease)"};
@@ -403,7 +446,17 @@ function LoginScreen({staff,onLogin}){
         <div style={{textAlign:"center",marginBottom:22}}>
           <div style={{width:68,height:68,borderRadius:18,background:"var(--or-grad)",color:"#fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:32,marginBottom:14,boxShadow:"var(--sh-or)"}}>🛒</div>
           <div style={{fontSize:19,fontWeight:800,color:"var(--or)",letterSpacing:.6}}>CLB BÁN HÀNG</div>
-          <div style={{fontSize:11.5,color:"var(--mut)",marginTop:3}}>v{VERSION} · Nhập mã PIN để bắt đầu</div>
+          <div style={{fontSize:11.5,color:"var(--mut)",marginTop:3}}>v{VERSION} · Nhập tên đăng nhập + PIN</div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:11,color:"var(--mut)",fontWeight:600,marginBottom:5,display:"block"}}>Tên đăng nhập</label>
+          <input ref={unameRef} type="text" autoComplete="username" autoCapitalize="none" spellCheck={false}
+            value={username} onChange={e=>{setUsername(e.target.value);setErr("");}}
+            placeholder="vd: khanh, ha, minh…"
+            style={{width:"100%",padding:"11px 13px",fontSize:14,border:"1.5px solid #E8E8E8",borderRadius:"var(--r-md)",outline:"none",fontWeight:600,background:"#fff",color:"var(--text)",transition:"border-color .15s"}}
+            onFocus={e=>e.target.style.borderColor="var(--or)"}
+            onBlur={e=>e.target.style.borderColor="#E8E8E8"}/>
         </div>
 
         <div style={{display:"flex",gap:11,justifyContent:"center",marginBottom:err?6:20}}>
@@ -2751,6 +2804,158 @@ function ReportScreen({orders,staff,products,shift,toast}){
 /* ══════════════════════════════════════════════════════════
    SETTINGS SCREEN
 ══════════════════════════════════════════════════════════ */
+/* v1.8: Telegram Bot settings — admin nhập BOT_TOKEN (lưu localStorage), test gửi tin cho staff */
+function TelegramSettings({staff,setStaff,toast}){
+  const [token,setToken] = useState(TG.getToken());
+  const [botInfo,setBotInfo] = useState(null);
+  const [busy,setBusy] = useState(false);
+  const [updates,setUpdates] = useState([]);
+
+  const saveToken = async ()=>{
+    const t = token.trim();
+    TG.setToken(t);
+    if (!t) { setBotInfo(null); toast("Đã xoá token","info"); return; }
+    setBusy(true);
+    const me = await TG.getMe();
+    setBusy(false);
+    if (me?.ok) { setBotInfo(me.result); toast(`✓ Kết nối @${me.result.username}`,"success"); }
+    else { setBotInfo(null); toast("Token không hợp lệ","error"); }
+  };
+
+  const testSend = async (s)=>{
+    if (!s.telegram_chat_id) { toast("Chưa có chat_id cho "+s.name,"warn"); return; }
+    setBusy(true);
+    const r = await TG.send(s.telegram_chat_id, `🔔 <b>Test từ CLB Bán Hàng</b>\nXin chào <b>${s.name}</b>!\nBạn sẽ nhận noti khi có đơn cần xử lý.`);
+    setBusy(false);
+    if (r?.ok) toast(`✓ Đã gửi tới ${s.name}`,"success");
+    else toast(`Lỗi gửi: ${r?.description||r?.error||"không rõ"}`,"error");
+  };
+
+  const fetchUpdates = async ()=>{
+    if (!TG.isOn()) { toast("Chưa có token","warn"); return; }
+    setBusy(true);
+    try{
+      const r = await fetch(`https://api.telegram.org/bot${TG.getToken()}/getUpdates`);
+      const j = await r.json();
+      if (j.ok) {
+        const chats = [];
+        const seen = new Set();
+        (j.result||[]).forEach(u=>{
+          const c = u.message?.chat;
+          if (c && !seen.has(c.id)) { seen.add(c.id); chats.push(c); }
+        });
+        setUpdates(chats);
+        toast(`Tìm thấy ${chats.length} chat đã /start bot`,"info");
+      } else toast("Lỗi: "+(j.description||"không rõ"),"error");
+    }catch(e){ toast("Lỗi mạng: "+e.message,"error"); }
+    setBusy(false);
+  };
+
+  const linkChatToStaff = (chatId, staffId)=>{
+    setStaff(ss=>ss.map(x=>x.id===staffId?{...x,telegram_chat_id:String(chatId)}:x));
+    toast("Đã liên kết","success");
+  };
+
+  // Auto-load bot info nếu đã có token
+  React.useEffect(()=>{
+    if (TG.isOn() && !botInfo) {
+      TG.getMe().then(me=>{ if (me?.ok) setBotInfo(me.result); });
+    }
+  // eslint-disable-next-line
+  },[]);
+
+  const withTg = staff.filter(s=>s.telegram_chat_id);
+  const withoutTg = staff.filter(s=>s.active && !s.telegram_chat_id);
+
+  return (
+    <>
+      <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"11px 14px",marginBottom:14,fontSize:11.5,color:"#1E40AF",lineHeight:1.6}}>
+        <div style={{display:"flex",gap:8}}>
+          <i className="ti ti-info-circle" style={{fontSize:16,flexShrink:0,marginTop:1}}/>
+          <div>
+            <b>Cách dùng (3 bước):</b>
+            <ol style={{margin:"4px 0 0 18px",padding:0}}>
+              <li>Chat với <a href="https://t.me/BotFather" target="_blank" style={{color:"#1D4ED8",fontWeight:700}}>@BotFather</a> trên Telegram → <code>/newbot</code> → đặt tên → lấy <b>BOT_TOKEN</b> → dán bên dưới</li>
+              <li>Mỗi thành viên chat với bot vừa tạo → gửi <code>/start</code> → bấm <b>"Quét chat đã /start"</b> bên dưới để tự liên kết</li>
+              <li>Khi có đơn mới / cần shipper / gán shipper → bot gửi tin về cá nhân trên Telegram (kể cả khi không mở web)</li>
+            </ol>
+            <div style={{marginTop:6,fontSize:10.5,color:"#475569"}}>⚠ Token lưu trong <b>localStorage của thiết bị này</b> — không sync sang máy khác. Mỗi máy admin/trưởng ca cần cấu hình riêng.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{padding:14,marginBottom:14}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#212121",marginBottom:10}}>🤖 Bot Token</div>
+        <div style={{display:"flex",gap:8}}>
+          <input value={token} onChange={e=>setToken(e.target.value)} placeholder="123456:ABC-DEF..." type="password"
+            style={{flex:1,padding:"9px 12px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,fontFamily:"monospace"}}/>
+          <button onClick={saveToken} disabled={busy} className="btn-pri" style={{padding:"9px 16px",borderRadius:6,fontSize:12}}>{busy?"...":"Lưu & Kiểm tra"}</button>
+          {TG.isOn() && <button onClick={()=>{setToken("");TG.setToken("");setBotInfo(null);toast("Đã xoá","info");}} style={{padding:"9px 14px",border:"1px solid #fca5a5",background:"#fff",color:"#b91c1c",borderRadius:6,cursor:"pointer",fontSize:12}}>Xoá token</button>}
+        </div>
+        {botInfo && (
+          <div style={{marginTop:10,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:6,fontSize:11.5,color:"#166534",display:"flex",alignItems:"center",gap:8}}>
+            <i className="ti ti-circle-check-filled" style={{fontSize:16,color:"#16a34a"}}/>
+            <span>Bot <b>@{botInfo.username}</b> ({botInfo.first_name}) sẵn sàng — link: <a href={`https://t.me/${botInfo.username}`} target="_blank" style={{color:"#16a34a",fontWeight:700}}>t.me/{botInfo.username}</a></span>
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{padding:14,marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>🔗 Liên kết Chat ID cho từng thành viên</div>
+          <button onClick={fetchUpdates} disabled={busy||!TG.isOn()} className="btn-pri" style={{padding:"7px 12px",borderRadius:6,fontSize:11.5}}>
+            <i className="ti ti-refresh" style={{fontSize:13,marginRight:4}}/>{busy?"...":"Quét chat đã /start"}
+          </button>
+        </div>
+        {updates.length>0 && (
+          <div style={{background:"#fafafa",border:"1px solid #f0f0f0",borderRadius:6,padding:10,marginBottom:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#475569",marginBottom:6}}>Chat đã /start bot ({updates.length}):</div>
+            {updates.map(c=>(
+              <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:"1px solid #f0f0f0",fontSize:11.5}}>
+                <span style={{fontFamily:"monospace",color:"#475569",minWidth:110}}>{c.id}</span>
+                <span style={{flex:1,fontWeight:600}}>{c.first_name||""} {c.last_name||""} {c.username?<span style={{color:"#0088cc"}}>@{c.username}</span>:""}</span>
+                <select onChange={e=>{ if(e.target.value) linkChatToStaff(c.id, +e.target.value); e.target.value="";}}
+                  style={{padding:"5px 8px",border:"1px solid var(--bd)",borderRadius:5,fontSize:11,background:"#fff"}}>
+                  <option value="">→ gán cho…</option>
+                  {staff.filter(s=>s.active).map(s=>(
+                    <option key={s.id} value={s.id}>{s.name} ({s.username||"?"})</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{fontSize:11.5,color:"#475569",marginBottom:6,fontWeight:600}}>Đã liên kết ({withTg.length}/{staff.length}):</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8,marginBottom:withoutTg.length?14:0}}>
+          {withTg.map(s=>(
+            <div key={s.id} style={{padding:"8px 10px",background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:6,display:"flex",alignItems:"center",gap:8}}>
+              <i className="ti ti-brand-telegram" style={{fontSize:18,color:"#0088cc"}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#212121",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.name}</div>
+                <div style={{fontSize:10,color:"#475569",fontFamily:"monospace"}}>{s.telegram_chat_id}</div>
+              </div>
+              <button onClick={()=>testSend(s)} disabled={busy} title="Gửi test" style={{padding:"4px 8px",border:"1px solid #0088cc",background:"#fff",color:"#0088cc",borderRadius:4,cursor:"pointer",fontSize:10,fontWeight:700}}>Test</button>
+              <button onClick={()=>{setStaff(ss=>ss.map(x=>x.id===s.id?{...x,telegram_chat_id:null}:x));toast("Đã ngắt","info");}} title="Ngắt liên kết" style={{padding:"4px 6px",border:"1px solid #fca5a5",background:"#fff",color:"#b91c1c",borderRadius:4,cursor:"pointer",fontSize:11}}>✕</button>
+            </div>
+          ))}
+        </div>
+
+        {withoutTg.length>0 && (
+          <>
+            <div style={{fontSize:11.5,color:"#94a3b8",marginBottom:6,fontWeight:600}}>Chưa liên kết ({withoutTg.length}):</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {withoutTg.map(s=>(
+                <span key={s.id} style={{fontSize:11,padding:"4px 9px",background:"#F1F5F9",color:"#64748B",borderRadius:"var(--r-pill)",fontWeight:600}}>{s.name}</span>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
 function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shift,setShift,categories,setCategories,shifts,setShifts,shiftAssignments,upsertAssignment,deleteAssignment,currentUser,toast}){
   const [tab,setTab] = useState("staff");
   const [recipe,setRecipe] = useState(null);
@@ -2760,6 +2965,7 @@ function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shif
     {k:"prod",  l:"Sản phẩm & Tồn kho", ic:"ti-package"},
     {k:"cat",   l:"Danh mục",            ic:"ti-category"},
     {k:"shift", l:"Lịch ca & Phân công", ic:"ti-calendar-time"},
+    {k:"tg",    l:"Telegram Bot",        ic:"ti-brand-telegram"},
     {k:"gen",   l:"Cài đặt chung",      ic:"ti-settings-2"},
   ];
 
@@ -2778,6 +2984,7 @@ function SettingsScreen({products,setProducts,staff,setStaff,zones,setZones,shif
       {tab==="prod" &&<ProductSettings products={products} setProducts={setProducts} categories={categories} setRecipe={setRecipe} toast={toast}/>}
       {tab==="cat"  &&<CategorySettings categories={categories} setCategories={setCategories} products={products} toast={toast}/>}
       {tab==="shift"&&<ShiftSettings shifts={shifts} setShifts={setShifts} shiftAssignments={shiftAssignments} upsertAssignment={upsertAssignment} deleteAssignment={deleteAssignment} staff={staff} toast={toast}/>}
+      {tab==="tg"   &&<TelegramSettings staff={staff} setStaff={setStaff} toast={toast}/>}
       {tab==="gen"  &&<GeneralSettings zones={zones} setZones={setZones} shift={shift} setShift={setShift} staff={staff} products={products} toast={toast}/>}
 
       {recipe&&<RecipeModal product={recipe} onClose={()=>setRecipe(null)}
@@ -3329,23 +3536,27 @@ function CategorySettings({categories,setCategories,products,toast}){
 function StaffSettings({staff,setStaff,currentUser,toast}){
   const [adding,setAdding] = useState(false);
   const [editing,setEditing] = useState(null);
-  const [form,setForm] = useState({name:"",role:"truc_don",pin:""});
+  const [form,setForm] = useState({name:"",username:"",role:"truc_don",pin:"",telegram_chat_id:""});
 
   const submit=()=>{
     if(!form.name.trim()){toast("Vui lòng nhập họ tên","warn");return;}
+    const uname = (form.username||"").trim().toLowerCase();
+    if(!uname){toast("Vui lòng nhập tên đăng nhập","warn");return;}
+    if(!/^[a-z0-9_.-]{2,32}$/.test(uname)){toast("Username 2-32 ký tự, chỉ a-z 0-9 . _ -","warn");return;}
+    if(staff.some(s=>(s.username||"").toLowerCase()===uname && s.id!==editing?.id)){toast("Username trùng với người khác","warn");return;}
     if(!/^\d{4}$/.test(form.pin)){toast("PIN phải là 4 chữ số","warn");return;}
     if(staff.some(s=>s.pin===form.pin&&s.id!==editing?.id)){toast("PIN trùng với người khác","warn");return;}
     if(editing){
-      setStaff(ss=>ss.map(s=>s.id===editing.id?{...s,name:form.name.trim(),role:form.role,pin:form.pin}:s));
+      setStaff(ss=>ss.map(s=>s.id===editing.id?{...s,name:form.name.trim(),username:uname,role:form.role,pin:form.pin,telegram_chat_id:form.telegram_chat_id.trim()||null}:s));
       toast("Đã cập nhật","success");
       setEditing(null);
     }else{
       const id=Math.max(0,...staff.map(s=>s.id))+1;
-      setStaff(ss=>[...ss,{id,name:form.name.trim(),role:form.role,checkin:nowS(),active:true,pin:form.pin}]);
+      setStaff(ss=>[...ss,{id,name:form.name.trim(),username:uname,role:form.role,checkin:nowS(),active:true,pin:form.pin,telegram_chat_id:form.telegram_chat_id.trim()||null}]);
       toast("Đã thêm thành viên","success");
       setAdding(false);
     }
-    setForm({name:"",role:"truc_don",pin:""});
+    setForm({name:"",username:"",role:"truc_don",pin:"",telegram_chat_id:""});
   };
 
   const remove=s=>{
@@ -3357,7 +3568,7 @@ function StaffSettings({staff,setStaff,currentUser,toast}){
 
   const startEdit=s=>{
     setEditing(s); setAdding(false);
-    setForm({name:s.name,role:s.role,pin:s.pin});
+    setForm({name:s.name,username:s.username||"",role:s.role,pin:s.pin,telegram_chat_id:s.telegram_chat_id||""});
   };
 
   const toggleActive=s=>setStaff(ss=>ss.map(x=>x.id===s.id?{...x,active:!x.active}:x));
@@ -3366,13 +3577,13 @@ function StaffSettings({staff,setStaff,currentUser,toast}){
     <>
       <div style={{background:"#FFF4F0",border:"1px solid #FFD4C2",borderRadius:8,padding:"11px 14px",marginBottom:14,fontSize:11.5,color:"#92400e",lineHeight:1.55,display:"flex",gap:8}}>
         <i className="ti ti-info-circle" style={{fontSize:16,color:"var(--or)",flexShrink:0,marginTop:1}}/>
-        <span><b>Khuyến nghị:</b> Mỗi thành viên có 1 PIN 4 số riêng để hệ thống ghi nhận chính xác KPI cá nhân và lịch sử thao tác.</span>
+        <span><b>Khuyến nghị:</b> Mỗi thành viên có 1 <b>username</b> + PIN 4 số riêng để đăng nhập. Thêm <b>Telegram chat ID</b> để nhận noti khi có đơn (xem tab "Telegram Bot").</span>
       </div>
 
       <div className="card" style={{padding:14,marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{fontSize:13,fontWeight:700,color:"#212121"}}>Danh sách thành viên ({staff.length})</div>
-          {!adding&&!editing&&<button onClick={()=>{setAdding(true);setForm({name:"",role:"truc_don",pin:""});}}
+          {!adding&&!editing&&<button onClick={()=>{setAdding(true);setForm({name:"",username:"",role:"truc_don",pin:"",telegram_chat_id:""});}}
             className="btn-pri" style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:6,fontSize:12}}>
             <i className="ti ti-plus" style={{fontSize:14}}/>Thêm thành viên
           </button>}
@@ -3381,27 +3592,37 @@ function StaffSettings({staff,setStaff,currentUser,toast}){
         {(adding||editing)&&(
           <div style={{background:"#fafafa",border:"1px solid #f0f0f0",borderRadius:8,padding:14,marginBottom:14}}>
             <div style={{fontSize:12,fontWeight:700,color:"#212121",marginBottom:10}}>{editing?`Chỉnh sửa: ${editing.name}`:"Thêm thành viên mới"}</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 110px auto",gap:8,alignItems:"end"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 110px 1fr",gap:8,alignItems:"end",marginBottom:8}}>
               <div>
                 <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Họ tên</div>
                 <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Nguyễn Văn A" style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12}}/>
               </div>
               <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Tên đăng nhập</div>
+                <input value={form.username} onChange={e=>setForm(f=>({...f,username:e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g,"")}))} placeholder="vd: vana" style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,fontFamily:"monospace"}}/>
+              </div>
+              <div>
                 <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>Vai trò</div>
                 <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}
                   style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,background:"#fff",cursor:"pointer"}}>
-                  {Object.entries(RL).map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                  {Object.entries(RL).filter(([k])=>k!=="off").map(([k,l])=><option key={k} value={k}>{l}</option>)}
                 </select>
               </div>
               <div>
                 <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600}}>PIN (4 số)</div>
                 <input value={form.pin} maxLength={4} onChange={e=>setForm(f=>({...f,pin:e.target.value.replace(/\D/g,"")}))} placeholder="0000" style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,fontFamily:"monospace",letterSpacing:"3px",textAlign:"center"}}/>
               </div>
-              <div style={{display:"flex",gap:6}}>
-                <button onClick={submit} className="btn-pri" style={{padding:"8px 14px",borderRadius:6,fontSize:12}}>{editing?"Lưu":"Thêm"}</button>
-                <button onClick={()=>{setAdding(false);setEditing(null);}}
-                  style={{padding:"8px 14px",border:"1px solid var(--bd)",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#475569"}}>Huỷ</button>
+              <div>
+                <div style={{fontSize:10,color:"#767676",marginBottom:3,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
+                  <i className="ti ti-brand-telegram" style={{fontSize:12,color:"#0088cc"}}/>Telegram chat ID
+                </div>
+                <input value={form.telegram_chat_id} onChange={e=>setForm(f=>({...f,telegram_chat_id:e.target.value.trim()}))} placeholder="vd: 123456789" style={{width:"100%",padding:"7px 10px",border:"1px solid var(--bd)",borderRadius:6,fontSize:12,fontFamily:"monospace"}}/>
               </div>
+            </div>
+            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+              <button onClick={submit} className="btn-pri" style={{padding:"8px 14px",borderRadius:6,fontSize:12}}>{editing?"Lưu":"Thêm"}</button>
+              <button onClick={()=>{setAdding(false);setEditing(null);}}
+                style={{padding:"8px 14px",border:"1px solid var(--bd)",background:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,color:"#475569"}}>Huỷ</button>
             </div>
           </div>
         )}
@@ -3409,7 +3630,7 @@ function StaffSettings({staff,setStaff,currentUser,toast}){
         <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
           <thead>
-            <tr>{["","Tên","Vai trò","PIN","Hoạt động","Mô tả","Thao tác"].map(h=>(
+            <tr>{["","Tên","Username","Vai trò","PIN","TG","Hoạt động","Thao tác"].map(h=>(
               <th key={h} style={{padding:"8px",textAlign:"left",fontSize:10,color:"#999",fontWeight:700,borderBottom:"1px solid #f0f0f0",letterSpacing:".3px"}}>{h}</th>
             ))}</tr>
           </thead>
@@ -3424,10 +3645,15 @@ function StaffSettings({staff,setStaff,currentUser,toast}){
                   <td style={{padding:"9px 8px",color:"#212121",fontWeight:700}}>
                     {s.name}{s.id===currentUser.id&&<span style={{fontSize:9,marginLeft:6,padding:"2px 6px",background:"#FFF4F0",color:"var(--or)",borderRadius:3,fontWeight:700}}>BẠN</span>}
                   </td>
+                  <td style={{padding:"9px 8px",color:s.username?"#475569":"#cbd5e1",fontFamily:"monospace",fontSize:11}}>{s.username||<i style={{color:"#fca5a5"}}>chưa có</i>}</td>
                   <td style={{padding:"9px 8px"}}><span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:bg,color:tc,fontWeight:700}}>{RL[s.role]}</span></td>
                   <td style={{padding:"9px 8px",fontFamily:"monospace",letterSpacing:"2px",color:"#767676"}}>••••</td>
+                  <td style={{padding:"9px 8px",textAlign:"center"}} title={s.telegram_chat_id||"Chưa kết nối Telegram"}>
+                    {s.telegram_chat_id
+                      ? <i className="ti ti-brand-telegram" style={{fontSize:16,color:"#0088cc"}}/>
+                      : <i className="ti ti-minus" style={{fontSize:14,color:"#cbd5e1"}}/>}
+                  </td>
                   <td style={{padding:"9px 8px"}}><Tog on={s.active} onChange={()=>toggleActive(s)} sm/></td>
-                  <td style={{padding:"9px 8px",color:"#767676",fontSize:10.5,maxWidth:240}}>{RD[s.role]}</td>
                   <td style={{padding:"9px 8px"}}>
                     <div style={{display:"flex",gap:5}}>
                       <button onClick={()=>startEdit(s)} style={{fontSize:10,padding:"4px 9px",border:"1px solid var(--bd)",borderRadius:5,background:"#fff",cursor:"pointer",color:"#475569"}}>Sửa</button>
@@ -3744,6 +3970,25 @@ function App(){
   const effectiveRoleRef = useRef("off");
   const currentUserRef   = useRef(null);
   const notifEnabledRef  = useRef(notifEnabled);
+  const onlineUsersRef   = useRef([]);
+  const currentShiftRef  = useRef(null);
+  const shiftAssignmentsRef = useRef([]);
+
+  // v1.8: Telegram broadcast — gửi cho tất cả staff có chat_id, lọc theo role-trong-ca-hiện-tại
+  const tgBroadcast = useCallback((roles, text)=>{
+    if (!TG.isOn()) return;
+    const cs = currentShiftRef.current;
+    const sas = shiftAssignmentsRef.current||[];
+    const recipients = (staffRef.current||[]).filter(s=>{
+      if (!s.active || !s.telegram_chat_id) return false;
+      if (s.role === "admin" && roles.includes("admin")) return true;
+      if (!cs) return roles.includes(s.role);
+      const a = sas.find(x=>x.shift_id===cs.id && x.staff_id===s.id);
+      const eff = a ? a.role : "off";
+      return roles.includes(eff);
+    });
+    recipients.forEach(s=>TG.send(s.telegram_chat_id, text).catch(()=>{}));
+  },[]);
 
   const toast=useCallback((msg,type="info")=>{
     const id=Date.now()+Math.random();
@@ -4008,7 +4253,9 @@ function App(){
         // Dedupe theo id (1 user có thể mở nhiều tab)
         const seen = new Map();
         Object.values(state).flat().forEach(u=>{ if(u && u.id!=null && !seen.has(u.id)) seen.set(u.id,u); });
-        setOnlineUsers(Array.from(seen.values()));
+        const arr = Array.from(seen.values());
+        onlineUsersRef.current = arr;
+        setOnlineUsers(arr);
       })
       .on("postgres_changes",{event:"*",schema:"public",table:"products"},p=>{
         if (p.eventType==="DELETE") removeFrom(_setProducts,productsRef,"id",p.old.id);
@@ -4034,6 +4281,19 @@ function App(){
             const itemCount = (r.items||[]).reduce((s,i)=>s+(i.qty||0),0);
             notify(`🆕 Đơn mới ${orderId(r.num)}`, `${r.cus} — ${itemCount} món`);
           }
+          // v1.8: Telegram noti — leader gửi để dedupe
+          if (TG.isOn() && TG.isLeader(currentUserRef.current?.id, onlineUsersRef.current||[])) {
+            const itemCount = (r.items||[]).reduce((s,i)=>s+(i.qty||0),0);
+            const summary = (r.items||[]).map(i=>`• ${i.qty}× ${i.n||i.name||""}`).join("\n");
+            if (r.st === "cho_xac_nhan") {
+              // Báo các trực đơn + trưởng ca có chat_id
+              tgBroadcast(["truc_don","truong_ca","admin"],
+                `🔔 <b>Đơn KHÁCH chờ duyệt</b>\n${orderId(r.num)} · ${r.cus||""}${r.ph?` · ${r.ph}`:""}\n${summary}\n💰 ${fmt(r.tot||0)}`);
+            } else {
+              tgBroadcast(["pha_che","truong_ca","admin"],
+                `🆕 <b>Đơn mới ${orderId(r.num)}</b>\n${r.cus||""} — ${itemCount} món\n${summary}`);
+            }
+          }
         } else if (p.eventType === "UPDATE") {
           const old = p.old || {};
           // Đơn sẵn sàng ship & chưa có shipper → báo trưởng ca + shipper (self-claim pool)
@@ -4044,11 +4304,24 @@ function App(){
             if (role === "shipper") {
               notify(`🆕 Đơn mới có thể nhận: ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
             }
+            // v1.8: Telegram — leader gửi cho tất cả shipper + trưởng ca
+            if (TG.isOn() && TG.isLeader(currentUserRef.current?.id, onlineUsersRef.current||[])) {
+              tgBroadcast(["shipper","truong_ca","admin"],
+                `📦 <b>Đơn cần shipper ${orderId(r.num)}</b>\n${r.cus||""} — ${r.adr||""}\n💰 ${fmt(r.tot||0)} · phí ship ${fmt(r.d_fee||r.dFee||0)}\n👉 Mở app để nhận`);
+            }
           }
           // Shipper bị gán đơn (sid thay đổi sang chính họ) → báo riêng cho shipper đó
           const uid = currentUserRef.current?.id;
           if (role === "shipper" && r.sid === uid && old.sid !== uid) {
             notify(`🛵 Bạn vừa được giao đơn ${orderId(r.num)}`, `${r.cus} — ${r.adr||""}`);
+          }
+          // v1.8: Telegram DM cá nhân cho shipper được gán (bất kỳ client nào nhận sự kiện, gửi 1 lần qua leader)
+          if (TG.isOn() && r.sid && r.sid !== old.sid && TG.isLeader(currentUserRef.current?.id, onlineUsersRef.current||[])) {
+            const sh = (staffRef.current||[]).find(s=>s.id===r.sid);
+            if (sh?.telegram_chat_id) {
+              TG.send(sh.telegram_chat_id,
+                `🛵 <b>Bạn vừa được giao đơn ${orderId(r.num)}</b>\n${r.cus||""}\n📍 ${r.adr||"(tại chỗ)"}\n💰 ${fmt(r.tot||0)}`);
+            }
           }
         }
         mergeOrder(r);
@@ -4170,6 +4443,9 @@ function App(){
   const currentShift = getCurrentShift(shifts);
   const effectiveRoleEarly = getEffectiveRole(currentShift, shiftAssignments, currentUser);
   if (currentUser) { effectiveRoleRef.current = effectiveRoleEarly; currentUserRef.current = currentUser; }
+  // v1.8: sync refs cho tgBroadcast
+  currentShiftRef.current = currentShift;
+  shiftAssignmentsRef.current = shiftAssignments;
 
   const SCREENS={
     dashboard:{title:"Tổng quan",       sub:`${currentShift?currentShift.name+" · "+currentShift.start_at+"–"+currentShift.end_at:"Ngoài giờ làm việc"} · ${shiftAssignments.filter(a=>a.shift_id===currentShift?.id && a.role!=="off").length} thành viên phân ca · 🟢 ${onlineUsers.length} đang online`,
